@@ -3,3 +3,7 @@ build/
 src/styles.generated.css
 .ref-staging/
 .DS_Store
+
+# Test data is generated locally (python3 test-data/gen_oes.py test-data); only the generator is tracked
+test-data/*
+!test-data/gen_oes.py
