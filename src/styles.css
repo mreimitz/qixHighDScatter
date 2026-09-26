@@ -1,0 +1,226 @@
+@import "@elabs-ai/components-tokens/styles.css";
+@import "@elabs-ai/components-tokens/themes/dark.css";
+@source "../node_modules/@elabs-ai/components-charts/dist";
+@source "../node_modules/@elabs-ai/components-ui/dist";
+@source "../node_modules/@elabs-ai/components-tokens/dist";
+@source "./";
+
+/* qixHighDScatter chrome (scoped by the build to .qhds) */
+.qhds-frame { position: relative; overflow: hidden; background: var(--background); color: var(--foreground); }
+.qhds-empty { display: flex; align-items: center; justify-content: center; text-align: center; padding: 16px;
+  font-size: 13px; color: var(--muted-foreground); }
+.qhds-status { position: absolute; left: 64px; top: 4px; z-index: 2; align-items: flex-start; display: flex; flex-direction: column; gap: 2px;
+  font-size: 11px; color: var(--muted-foreground); pointer-events: none;
+  background: color-mix(in oklab, var(--background) 85%, transparent); padding: 2px 6px; border-radius: 3px; }
+.qhds-warn { color: #c0392b; }
+
+/* ---------- in-chart "Edit zones" (edit mode) ---------- */
+.qhds-edit-zones { position: absolute; left: 50%; transform: translateX(-50%); top: 6px; z-index: 5; display: inline-flex; align-items: center; gap: 6px;
+  height: 28px; padding: 0 10px; border: 1px solid var(--foreground); border-radius: 3px; background: var(--card);
+  color: var(--foreground); font: 600 12px/1 var(--font-sans); cursor: pointer; }
+.qhds-edit-zones:hover { background: var(--muted); }
+
+/* ---------- zone editor modal ---------- */
+.qhds-ze-root { position: fixed; inset: 0; z-index: 10050; font-size: 14px; color: var(--foreground); }
+.qhds-ze-backdrop { position: absolute; inset: 0; background: rgba(38, 38, 38, 0.48); }
+.qhds-ze-modal { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  width: min(1260px, calc(100vw - 48px)); height: min(812px, calc(100vh - 48px)); display: flex; flex-direction: column;
+  background: var(--card); border-radius: 4px; box-shadow: 0 12px 40px rgba(0,0,0,.28); overflow: hidden; outline: none; }
+.qhds-ze-header { height: 60px; flex-shrink: 0; display: flex; align-items: center; gap: 12px; padding: 0 12px 0 24px; border-bottom: 1px solid var(--border); }
+.qhds-ze-titles { display: flex; flex-direction: column; flex-grow: 1; min-width: 0; }
+.qhds-ze-titles h2 { margin: 0; font-size: 18px; font-weight: 700; }
+.qhds-ze-muted { color: var(--muted-foreground); font-size: 12px; }
+.qhds-ze-h { font-size: 13px; font-weight: 700; }
+.qhds-ze-sep { width: 1px; height: 28px; background: var(--border); }
+.qhds-ze-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.qhds-ze-seg { display: inline-grid; grid-auto-flow: column; border: 1px solid #bfbfbf; border-radius: 3px; overflow: hidden; }
+.qhds-ze-seg > button { border: 0; border-right: 1px solid #d9d9d9; padding: 6px 12px; background: var(--card); color: var(--foreground); font: inherit; font-size: 13px; cursor: pointer; }
+.qhds-ze-seg > button:last-child { border-right: 0; }
+.qhds-ze-seg > button[aria-checked="true"] { background: var(--foreground); color: var(--card); font-weight: 600; }
+.qhds-ze-seg-4 { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.qhds-ze-seg-4 > button { padding: 7px 4px; }
+.qhds-ze-icon-btn { width: 32px; height: 32px; display: inline-flex; align-items: center; justify-content: center; border: 0; border-radius: 3px;
+  background: transparent; color: var(--foreground); cursor: pointer; }
+.qhds-ze-icon-btn:hover:not(:disabled) { background: var(--muted); }
+.qhds-ze-icon-btn:disabled { opacity: .35; cursor: default; }
+.qhds-ze-body { flex-grow: 1; min-height: 0; display: grid; grid-template-columns: 272px minmax(0, 1fr) 340px; }
+.qhds-ze-listcol { display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--border); background: var(--muted); }
+.qhds-ze-list-head { display: flex; align-items: baseline; justify-content: space-between; padding: 14px 16px 8px; }
+.qhds-ze-list { list-style: none; margin: 0; padding: 0 8px; display: flex; flex-direction: column; gap: 2px; overflow: auto; flex-grow: 1; }
+.qhds-ze-item { display: flex; align-items: center; gap: 8px; padding: 7px 4px 7px 6px; border-radius: 3px; cursor: pointer; }
+.qhds-ze-item:hover { background: color-mix(in oklab, var(--card) 60%, transparent); }
+.qhds-ze-item[aria-selected="true"] { background: var(--card); box-shadow: 0 0 0 1px var(--foreground), 0 1px 3px rgba(0,0,0,.08); }
+.qhds-ze-item:focus-visible { outline: 2px solid #177fe6; outline-offset: 1px; }
+.qhds-ze-item.is-outside { cursor: default; margin-top: 6px; border-top: 1px dashed #d9d9d9; border-radius: 0; padding-left: 26px; }
+.qhds-ze-grip { color: #a6a6a6; font-size: 11px; letter-spacing: -2px; cursor: grab; width: 12px; }
+.qhds-ze-swatch-sm { width: 14px; height: 14px; border-radius: 2px; flex-shrink: 0; }
+.qhds-ze-item-text { display: flex; flex-direction: column; flex-grow: 1; min-width: 0; }
+.qhds-ze-item-name { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.qhds-ze-item-sub { font-size: 12px; color: var(--muted-foreground); }
+.qhds-ze-item-sub.is-bad { color: #b3261e; }
+.qhds-ze-item-actions { display: flex; opacity: .55; }
+.qhds-ze-item:hover .qhds-ze-item-actions, .qhds-ze-item[aria-selected="true"] .qhds-ze-item-actions { opacity: 1; }
+.qhds-ze-item-actions .qhds-ze-icon-btn { width: 24px; height: 24px; }
+.qhds-ze-list-foot { padding: 12px 16px 16px; display: flex; flex-direction: column; gap: 8px; }
+.qhds-ze-menu-wrap { position: relative; }
+.qhds-ze-menu { position: absolute; left: 0; bottom: calc(100% + 6px); width: 268px; z-index: 2; background: var(--card); border: 1px solid var(--border);
+  border-radius: 4px; box-shadow: 0 6px 20px rgba(0,0,0,.16); padding: 6px; display: flex; flex-direction: column; gap: 2px; }
+.qhds-ze-menuitem { display: flex; gap: 12px; align-items: flex-start; text-align: left; padding: 8px 10px; border: 0; border-radius: 3px;
+  background: transparent; color: var(--foreground); font: inherit; cursor: pointer; }
+.qhds-ze-menuitem:hover, .qhds-ze-menuitem:focus-visible { background: var(--muted); }
+.qhds-ze-menuitem > span { display: flex; flex-direction: column; }
+.qhds-ze-btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 34px; padding: 0 14px; border: 1px solid #bfbfbf;
+  border-radius: 3px; background: var(--card); color: var(--foreground); font: 600 13px/1 var(--font-sans); cursor: pointer; }
+.qhds-ze-btn:hover:not(:disabled) { background: var(--muted); }
+.qhds-ze-btn:disabled { opacity: .45; cursor: default; }
+.qhds-ze-btn.is-primary { background: #007a3d; border-color: #007a3d; color: #fff; padding: 0 22px; }
+.qhds-ze-btn.is-primary:hover:not(:disabled) { background: #00652f; }
+.qhds-ze-btn.is-danger { color: #b3261e; border-color: #e3b1ad; }
+.qhds-ze-btn-block { width: 100%; }
+.qhds-ze-center { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.qhds-ze-toolbar { height: 48px; flex-shrink: 0; display: flex; align-items: center; gap: 10px; padding: 0 12px; border-bottom: 1px solid var(--border); }
+.qhds-ze-tools { display: flex; gap: 2px; padding: 3px; border-radius: 4px; background: var(--muted); }
+.qhds-ze-tool { width: 34px; height: 30px; display: inline-flex; align-items: center; justify-content: center; border: 0; border-radius: 3px;
+  background: transparent; color: var(--foreground); cursor: pointer; }
+.qhds-ze-tool[aria-pressed="true"] { background: var(--card); box-shadow: 0 1px 2px rgba(0,0,0,.15); }
+.qhds-ze-status { flex-grow: 1; font-size: 12px; color: var(--muted-foreground); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
+.qhds-ze-check { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; }
+.qhds-ze-preview { flex-grow: 1; min-height: 0; padding: 12px 16px 0 8px; overflow: hidden; }
+.qhds-ze-hints { height: 34px; flex-shrink: 0; display: flex; align-items: center; gap: 18px; padding: 0 16px; border-top: 1px solid var(--border);
+  font-size: 12px; color: var(--muted-foreground); white-space: nowrap; overflow: hidden; }
+.qhds-ze-overlay { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
+.qhds-ze-surface { fill: transparent; pointer-events: all; cursor: crosshair; }
+.qhds-ze-handle { fill: #fff; stroke-width: 2; pointer-events: all; cursor: grab; }
+.qhds-ze-handle:hover { r: 8; }
+.qhds-ze-handle.is-locked { fill: #e8e8e8; stroke-dasharray: 2 2; cursor: not-allowed; }
+.qhds-ze-mid { fill: #fff; stroke-width: 1.5; stroke-dasharray: 2 2; pointer-events: all; cursor: copy; }
+.qhds-ze-ghost { fill: none; stroke-width: 1.5; stroke-dasharray: 5 4; opacity: .7; }
+.qhds-ze-draft { fill-opacity: .12; stroke-width: 1.5; stroke-dasharray: 5 4; }
+.qhds-ze-draft-line { fill: none; stroke-width: 1.5; stroke-dasharray: 5 4; }
+.qhds-ze-inspector { border-left: 1px solid var(--border); padding: 16px 20px; display: flex; flex-direction: column; gap: 14px; overflow: auto; min-height: 0; }
+.qhds-ze-empty-insp p { margin: 0 0 6px; }
+.qhds-ze-field { display: flex; flex-direction: column; gap: 4px; }
+.qhds-ze-field > span { font-size: 12px; font-weight: 600; color: var(--muted-foreground); }
+.qhds-ze-field > input { height: 34px; box-sizing: border-box; border: 1px solid #bfbfbf; border-radius: 3px; padding: 0 10px; font: inherit; background: var(--card); color: var(--foreground); }
+.qhds-ze-swatches { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.qhds-ze-swatch { width: 24px; height: 24px; border: 0; border-radius: 3px; padding: 0; cursor: pointer; }
+.qhds-ze-swatch[aria-pressed="true"] { box-shadow: 0 0 0 2px var(--card), 0 0 0 4px var(--foreground); }
+.qhds-ze-colorin { width: 30px; height: 26px; padding: 0; border: 1px dashed #8c8c8c; border-radius: 3px; background: var(--card); cursor: pointer; }
+.qhds-ze-group { display: flex; flex-direction: column; gap: 6px; }
+.qhds-ze-group-head { display: flex; align-items: baseline; justify-content: space-between; }
+.qhds-ze-pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.qhds-ze-pair > div { display: flex; flex-direction: column; gap: 3px; }
+.qhds-ze-table { border: 1px solid #d9d9d9; border-radius: 3px; overflow: hidden; }
+.qhds-ze-tr { display: grid; grid-template-columns: 26px minmax(0, 1fr) minmax(0, 1fr) 28px; align-items: center; gap: 4px; padding: 3px 4px; border-top: 1px solid #eeeeee; }
+.qhds-ze-tr:first-child { border-top: 0; }
+.qhds-ze-th { background: var(--muted); font-size: 12px; font-weight: 600; color: var(--muted-foreground); }
+.qhds-ze-tr > span:first-child { text-align: center; }
+.qhds-ze-coord { display: flex; flex-direction: column; min-width: 0; }
+.qhds-ze-coord input { width: 100%; box-sizing: border-box; height: 28px; border: 1px solid transparent; border-radius: 3px; padding: 0 6px;
+  font: inherit; font-size: 13px; font-variant-numeric: tabular-nums; background: transparent; color: var(--foreground); }
+.qhds-ze-pair .qhds-ze-coord input { border-color: #bfbfbf; height: 32px; }
+.qhds-ze-coord input:hover { border-color: #d9d9d9; }
+.qhds-ze-coord input:focus { border-color: #0b6fbf; outline: none; background: var(--card); }
+.qhds-ze-coord input.is-expr { font-family: 'Source Code Pro', ui-monospace, monospace; font-size: 12px; color: #0b6fbf; }
+.qhds-ze-eval { font-size: 11px; color: var(--muted-foreground); padding-left: 6px; font-variant-numeric: tabular-nums; }
+.qhds-ze-link { align-self: flex-start; border: 0; background: transparent; padding: 2px 0; font: 600 13px/1.2 var(--font-sans); color: #0b6fbf; cursor: pointer; }
+.qhds-ze-switch { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 13px; }
+.qhds-ze-switch input { width: 34px; height: 18px; accent-color: #007a3d; }
+.qhds-ze-row-actions { display: flex; gap: 8px; flex-wrap: wrap; padding-top: 4px; }
+.qhds-ze-footer { height: 60px; flex-shrink: 0; display: flex; align-items: center; gap: 12px; padding: 0 24px; border-top: 1px solid var(--border); background: var(--muted); }
+.qhds-ze-grow { flex-grow: 1; }
+.qhds-ze-ok { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--foreground); }
+.qhds-ze-ok svg { color: #007a3d; }
+.qhds-ze-err { font-size: 13px; color: #b3261e; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 70%; }
+.qhds-ze-dataview { flex-grow: 1; min-height: 0; display: grid; grid-template-columns: 340px minmax(0, 1fr); gap: 32px; padding: 20px 24px; overflow: auto; }
+.qhds-ze-dataview p { margin: 6px 0 12px; }
+.qhds-ze-maprow { display: grid; grid-template-columns: 90px minmax(0, 1fr); align-items: center; padding: 6px 0; border-bottom: 1px solid #eeeeee; font-size: 13px; }
+.qhds-ze-maprow code, .qhds-ze-list-plain code { font-family: 'Source Code Pro', ui-monospace, monospace; font-size: 12px; }
+.qhds-ze-list-plain { margin: 8px 0 16px; padding-left: 18px; line-height: 1.7; font-size: 13px; }
+.qhds-ze-note { padding: 10px 12px; border-radius: 3px; background: #eef5fc; color: #1f3d5c; font-size: 13px; line-height: 1.45; }
+
+.qhds-ze-seg-2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.qhds-ze-seg-2 > button { padding: 7px 4px; }
+.qhds-ze-item.is-muted { opacity: .6; }
+
+.qhds-ze-seg-5 { display: grid; grid-auto-flow: row; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.qhds-ze-seg-5 > button:nth-child(3) { border-right: 0; }
+.qhds-ze-seg-5 > button:nth-child(n+4) { border-top: 1px solid #d9d9d9; }
+.qhds-ze-seg-5 > button { padding: 7px 2px; }
+.qhds-ze-endless { display: flex; align-items: center; height: 32px; padding: 0 8px; border: 1px dashed #bfbfbf; border-radius: 3px; font-size: 13px; color: var(--muted-foreground); }
+
+/* ---------- chart chrome placement (native-Qlik parity) ----------
+ * Qlik's own hover menu (download / full screen / …) owns the object's top-right
+ * corner, so nothing of ours lives there. The selection toolbar floats over the
+ * plot's top-left and only shows on hover (or while Range / Lasso is armed); the
+ * zoom controls sit in the plot's top-right (as Qlik's home button) and the minimap bottom-right. */
+.qhds [data-slot="chart-selection-root"] { position: relative; }
+.qhds-frame[data-toolbar="float"] [data-slot="chart-selection-toolbar"] {
+  position: absolute; top: 4px; left: 64px; z-index: 30; margin: 0;
+  background: color-mix(in oklab, var(--card) 92%, transparent); border-radius: 6px;
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.12); padding: 2px;
+  opacity: 0; transition: opacity 120ms ease; pointer-events: none; }
+.qhds-frame[data-toolbar="float"]:hover [data-slot="chart-selection-toolbar"],
+.qhds-frame[data-toolbar="float"]:focus-within [data-slot="chart-selection-toolbar"],
+.qhds-frame[data-toolbar="float"]:has([data-selection-tool="range"], [data-selection-tool="lasso"]) [data-slot="chart-selection-toolbar"] {
+  opacity: 1; pointer-events: auto; }
+@media (prefers-reduced-motion: reduce) {
+  .qhds-frame[data-toolbar="float"] [data-slot="chart-selection-toolbar"] { transition: none; }
+}
+.qhds-ze-finish { cursor: pointer; pointer-events: all; }
+.qhds-ze-finish rect { fill: var(--primary, #1f6f43); }
+.qhds-ze-finish text { fill: var(--primary-foreground, #fff); font: 600 11px/1 var(--font-sans, sans-serif); text-anchor: middle; }
+.qhds-ze-finish:hover rect { filter: brightness(1.1); }
+.qhds-ze-closer { cursor: pointer; }
+.qhds-frame[data-edit] .qhds-status { top: 42px; left: 8px; }
+/* Host CSS (Qlik Sense) grows plain flex children: pin the side legend column to its content. */
+.qhds [data-slot="container-legend-root"] > div:not(.flex-1) { flex: 0 0 auto !important; }
+.qhds [data-slot="container-legend-root"] > div.flex-1 { flex: 1 1 0% !important; min-width: 0; }
+/* A side legend starts below Qlik's hover menu / selection toolbar (they overlay the object's top-right). */
+.qhds [data-container-legend-position="right"] [data-slot="chart-legend"],
+.qhds [data-container-legend-position="left"] [data-slot="chart-legend"] { margin-top: 34px; }
+
+/* Qlik's selection green for axis ranges (the native range brush colour). */
+.qhds { --chart-range: #009845; }
+
+/* ---------- zone editor v0.4: icon selectors, tooltips, draw bar ---------- */
+.qhds-ze-iconseg { display: inline-flex; align-self: flex-start; width: max-content; }
+.qhds-ze-iconseg > button { display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 32px; padding: 0; }
+.qhds-ze-tip { position: relative; }
+.qhds-ze-tipbox { position: fixed; z-index: 2147483000; pointer-events: none; max-width: 260px; padding: 4px 8px; border-radius: 4px;
+  background: var(--foreground); color: var(--background); font: 500 12px/1.35 var(--font-sans, sans-serif); box-shadow: 0 2px 6px rgb(0 0 0 / .18); }
+.qhds-ze-iconseg { flex-wrap: wrap; }
+.qhds-ze-quads { display: flex; flex-direction: column; gap: 6px; }
+.qhds-ze-quad { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.qhds-ze-quad > input:not([type="color"]) { flex: 1; min-width: 0; height: 32px; box-sizing: border-box; border: 1px solid #bfbfbf; border-radius: 3px; padding: 0 10px; font: inherit; background: var(--card); color: var(--foreground); }
+.qhds-ze-quad > input:not([type="color"]):focus { border-color: #0b6fbf; outline: none; }
+.qhds-ze-quad > .qhds-ze-colorin { height: 32px; width: 36px; }
+.qhds-ze-quad-pos { flex: none; width: 14px; height: 14px; border: 1.5px solid var(--muted-foreground); border-radius: 2px; position: relative; }
+.qhds-ze-quad-pos::after { content: ""; position: absolute; width: 50%; height: 50%; background: var(--foreground); }
+.qhds-ze-quad-pos[data-q="0"]::after { left: 0; top: 0; }
+.qhds-ze-quad-pos[data-q="1"]::after { right: 0; top: 0; }
+.qhds-ze-quad-pos[data-q="2"]::after { left: 0; bottom: 0; }
+.qhds-ze-quad-pos[data-q="3"]::after { right: 0; bottom: 0; }
+.qhds-ze-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.qhds-ze-mini > button { padding: 2px 10px; font-size: 12px; }
+.qhds-ze-colorexpr { display: flex; flex-direction: column; gap: 4px; }
+.qhds-ze-colorexpr input { font-family: var(--font-mono, ui-monospace, monospace); font-size: 12px; height: 32px; padding: 0 8px; border: 1px solid #bfbfbf; border-radius: 3px; background: var(--card); color: var(--foreground); }
+.qhds-ze-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; vertical-align: -1px; border: 1px solid rgb(0 0 0 / .2); }
+.qhds-ze-preview { position: relative; }
+.qhds-ze-drawbar { position: absolute; left: 50%; top: 8px; transform: translateX(-50%); z-index: 6; display: flex; align-items: center; gap: 10px;
+  padding: 6px 8px 6px 12px; border-radius: 6px; background: var(--card); color: var(--foreground); box-shadow: 0 2px 10px rgb(0 0 0 / .16); font-size: 12px; white-space: nowrap; }
+.qhds-ze-hints { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.qhds-ze-hints-tools { display: inline-flex; align-items: center; gap: 10px; }
+
+/* ---------- statistics box (Presentation › Show statistics) ---------- */
+.qhds-stats { position: absolute; right: 4px; bottom: 4px; z-index: 2; display: grid; grid-template-columns: auto auto; column-gap: 10px; row-gap: 1px;
+  padding: 4px 8px; font-size: 11px; line-height: 1.35; color: var(--muted-foreground); pointer-events: none;
+  background: color-mix(in oklab, var(--card) 92%, transparent); border: 1px solid var(--border); border-radius: 3px; }
+.qhds-stats > b { font-weight: 600; color: var(--foreground); text-align: right; font-variant-numeric: tabular-nums; }
+/* keep the legend clear of the box */
+.qhds-frame[data-stats="bottom"] [data-slot="chart-legend"],
+.qhds-frame[data-stats="top"] [data-slot="chart-legend"] { padding-inline-end: 150px; }
+.qhds-frame[data-stats="right"] [data-slot="chart-legend"],
+.qhds-frame[data-stats="left"] [data-slot="chart-legend"] { padding-bottom: 60px; }
+.qhds-stats[data-legend="top"] { bottom: auto; top: 4px; }
+.qhds-stats[data-legend="left"] { right: auto; left: 4px; }

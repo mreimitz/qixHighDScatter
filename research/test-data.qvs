@@ -1,0 +1,45 @@
+// qixHighDScatter — synthetic test data (paste into the test app's load script).
+// 300,000 points: a dense core that narrows past a "funnel throat", a wider envelope,
+// scatter around it. Plus a zone table for "Zones from: Data model".
+
+SET vPoints = 300000;
+
+Points:
+LOAD
+    RecNo()                                   AS PointID,
+    X                                         AS AlongTrack,
+    Round(Y, 0.01)                            AS CrossTrack,
+    Round(80 + 80 * RangeMin(1, RangeMax(0, (X + 2200) / 5700)) + 8 * G2, 0.1) AS Speed,
+    If(R < 0.75, 'Core traffic', If(R < 0.95, 'Wide traffic', 'Stray'))       AS TrafficClass;
+LOAD
+    *,
+    If(R < 0.75,
+        G1 * If(X < -650, 16, If(X < -200, 16 - 11 * (X + 650) / 450, 5)),
+        If(R < 0.95, G1 * If(X < -200, 60, 14), G1 * 140))                    AS Y;
+LOAD
+    Rand()                                                                   AS R,
+    Round(-2200 + Rand() * 5700, 0.01)                                       AS X,
+    Sqrt(-2 * Log(Rand())) * Cos(2 * Pi() * Rand())                          AS G1,
+    Sqrt(-2 * Log(Rand())) * Cos(2 * Pi() * Rand())                          AS G2
+AUTOGENERATE $(vPoints);
+
+// Zone table: one row per vertex. ZoneEdge = upper/lower (envelope; no lower rows = mirrored)
+// or min/max (rectangle corners; empty ZoneX = horizontal band). Load order = priority.
+Zones:
+LOAD * INLINE [
+ZoneID, ZoneLabel, ZoneColor, ZoneEdge, ZoneSeq, ZoneX, ZoneY
+core, Core, #4477aa, upper, 1, -2200, 42
+core, Core, #4477aa, upper, 2, -650, 42
+core, Core, #4477aa, upper, 3, -200, 15
+core, Core, #4477aa, upper, 4, 3500, 15
+expanded, Expanded EIS, #f8981d, upper, 1, -1450, 215
+expanded, Expanded EIS, #f8981d, upper, 2, -200, 30
+expanded, Expanded EIS, #f8981d, upper, 3, 3500, 30
+expanded, Expanded EIS, #f8981d, lower, 1, -1300, -215
+expanded, Expanded EIS, #f8981d, lower, 2, -200, -30
+expanded, Expanded EIS, #f8981d, lower, 3, 3500, -30
+];
+
+// Suggested object setup:
+//   Dimension: PointID          Measures: Only(AlongTrack) (X), Only(CrossTrack) (Y), Only(Speed) (color value)
+//   Optional 2nd dimension: TrafficClass (Color by: Category)

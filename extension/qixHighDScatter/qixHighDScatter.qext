@@ -1,0 +1,10 @@
+{
+  "name": "High Density Scatter",
+  "description": "Scatter plot for 100k–1M points: every point drawn, coloured by density, classified by zones on the axes.",
+  "type": "visualization",
+  "version": "0.5.3",
+  "author": "Manuel Reimitz",
+  "icon": "scatterChart",
+  "preview": "",
+  "supernova": true
+}

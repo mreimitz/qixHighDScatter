@@ -1,0 +1,179 @@
+/**
+ * Straight-cube paging into typed arrays (decision D1: plain paging, kept simple).
+ * 10,000 cells per request is the engine's hard limit; pages run a few at a time
+ * and every finished page is published so the chart fills progressively.
+ */
+
+export interface QhdsColumns {
+  x: Float32Array;
+  y: Float32Array;
+  values?: Record<string, Float32Array>;
+  categories?: Record<string, { codes: Uint16Array; labels: string[]; elems: number[] }>;
+  /** qElemNumber of the point dimension per row (tap-to-select). */
+  elems: Int32Array;
+  /** qText of the point dimension per row (tooltip title). */
+  labels: string[];
+  /** 1 where the point-dimension value is selected (qState "S"). */
+  selected: Uint8Array;
+  /** Rows written so far (a prefix of the arrays). */
+  n: number;
+  total: number;
+  done: boolean;
+}
+
+const CELLS_PER_PAGE = 10000;
+const CONCURRENCY = 6;
+
+function num(cell: any): number {
+  const v = cell?.qNum;
+  return typeof v === "number" ? v : NaN;
+}
+
+export interface FetchHandle {
+  cancel(): void;
+}
+
+/**
+ * Pages `/qHyperCubeDef` in parallel. `onProgress` receives the same (growing)
+ * column object every time pages land; `n` only moves forward in row order so
+ * the prefix is always contiguous.
+ */
+/**
+ * Measure roles, as in the native scatter: X, Y, then an optional Size and an
+ * optional colour measure. `legacyColor3`: an object made before the Size role
+ * existed (colour by measure with exactly three measures) keeps the third as colour.
+ */
+export function fetchAllRows(
+  model: any,
+  hc: any,
+  maxPoints: number,
+  legacyColor3: boolean,
+  onProgress: (cols: QhdsColumns) => void,
+  onError: (err: unknown) => void,
+): FetchHandle {
+  let cancelled = false;
+  const nDims: number = hc.qDimensionInfo.length;
+  const nMeas: number = hc.qMeasureInfo.length;
+  const width: number = nDims + nMeas;
+  const total = Math.min(hc.qSize.qcy, maxPoints);
+  const pageH = Math.max(1, Math.floor(CELLS_PER_PAGE / width));
+  const pages = Math.ceil(total / pageH);
+
+  const xCol = nDims; // first measure
+  const yCol = nDims + 1;
+  const sCol = nMeas >= 3 && !legacyColor3 ? nDims + 2 : -1;
+  const vCol = legacyColor3 ? nDims + 2 : nMeas >= 4 ? nDims + 3 : -1;
+  const cCol = nDims >= 2 ? 1 : -1;
+
+  const cols: QhdsColumns = {
+    x: new Float32Array(total),
+    y: new Float32Array(total),
+    elems: new Int32Array(total),
+    labels: new Array<string>(total),
+    selected: new Uint8Array(total),
+    n: 0,
+    total,
+    done: total === 0,
+  };
+  if (vCol >= 0 || sCol >= 0) cols.values = {};
+  if (vCol >= 0) cols.values!.value = new Float32Array(total);
+  if (sCol >= 0) cols.values!.size = new Float32Array(total);
+  const catLabels: string[] = [];
+  const catElems: number[] = [];
+  const catIndex = new Map<string, number>();
+  let catCodes: Uint16Array | null = null;
+  if (cCol >= 0) {
+    catCodes = new Uint16Array(total);
+    cols.categories = { category: { codes: catCodes, labels: catLabels, elems: catElems } };
+  }
+
+  // Rows whose x/y are not numbers are dropped; we compact per page into a
+  // staging area, then commit pages strictly in order.
+  const staged: Array<
+    | { rows: number; x: Float32Array; y: Float32Array; e: Int32Array; t: string[]; st: Uint8Array; v?: Float32Array; sz?: Float32Array; c?: Uint16Array }
+    | undefined
+  > = new Array(pages);
+  let committedPage = 0;
+
+  const commit = () => {
+    let changed = false;
+    while (committedPage < pages && staged[committedPage]) {
+      const s = staged[committedPage]!;
+      cols.x.set(s.x.subarray(0, s.rows), cols.n);
+      cols.y.set(s.y.subarray(0, s.rows), cols.n);
+      cols.elems.set(s.e.subarray(0, s.rows), cols.n);
+      cols.selected.set(s.st.subarray(0, s.rows), cols.n);
+      for (let i = 0; i < s.rows; i++) cols.labels[cols.n + i] = s.t[i]!;
+      if (s.v && cols.values) cols.values.value!.set(s.v.subarray(0, s.rows), cols.n);
+      if (s.sz && cols.values) cols.values.size!.set(s.sz.subarray(0, s.rows), cols.n);
+      if (s.c && catCodes) catCodes.set(s.c.subarray(0, s.rows), cols.n);
+      cols.n += s.rows;
+      staged[committedPage] = undefined;
+      committedPage++;
+      changed = true;
+    }
+    if (committedPage === pages) cols.done = true;
+    if (changed || cols.done) onProgress(cols);
+  };
+
+  let next = 0;
+  const worker = async (): Promise<void> => {
+    while (!cancelled && next < pages) {
+      const p = next++;
+      const qTop = p * pageH;
+      const qHeight = Math.min(pageH, total - qTop);
+      const res = await model.getHyperCubeData("/qHyperCubeDef", [{ qTop, qLeft: 0, qWidth: width, qHeight }]);
+      if (cancelled) return;
+      const matrix: any[][] = res?.[0]?.qMatrix ?? [];
+      const x = new Float32Array(matrix.length);
+      const y = new Float32Array(matrix.length);
+      const v = vCol >= 0 ? new Float32Array(matrix.length) : undefined;
+      const sz = sCol >= 0 ? new Float32Array(matrix.length) : undefined;
+      const e = new Int32Array(matrix.length);
+      const t: string[] = new Array(matrix.length);
+      const st = new Uint8Array(matrix.length);
+      const c = cCol >= 0 ? new Uint16Array(matrix.length) : undefined;
+      let rows = 0;
+      for (const row of matrix) {
+        const px = num(row[xCol]);
+        const py = num(row[yCol]);
+        if (!Number.isFinite(px) || !Number.isFinite(py)) continue;
+        x[rows] = px;
+        y[rows] = py;
+        if (v) v[rows] = num(row[vCol]);
+        if (sz) sz[rows] = num(row[sCol]);
+        e[rows] = Number(row[0]?.qElemNumber ?? -1);
+        t[rows] = String(row[0]?.qText ?? "");
+        st[rows] = row[0]?.qState === "S" ? 1 : 0;
+        if (c) {
+          const t = String(row[cCol]?.qText ?? "");
+          let k = catIndex.get(t);
+          if (k === undefined) {
+            k = catLabels.length;
+            catIndex.set(t, k);
+            catLabels.push(t);
+            catElems.push(Number(row[cCol]?.qElemNumber ?? -1));
+          }
+          c[rows] = k;
+        }
+        rows++;
+      }
+      staged[p] = { rows, x, y, e, t, st, v, sz, c };
+      commit();
+    }
+  };
+
+  if (total === 0) {
+    queueMicrotask(() => !cancelled && onProgress(cols));
+  } else {
+    Promise.all(Array.from({ length: Math.min(CONCURRENCY, pages) }, worker)).catch((e) => {
+      if (!cancelled) onError(e);
+    });
+  }
+
+  return {
+    cancel() {
+      cancelled = true;
+    },
+  };
+}

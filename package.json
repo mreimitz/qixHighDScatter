@@ -1,0 +1,34 @@
+{
+  "name": "qixhighdscatter",
+  "version": "0.5.3",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "build:dev": "node scripts/build.mjs --dev",
+    "package": "node scripts/package.mjs",
+    "build:src": "node scripts/build.mjs"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@elabs-ai/components-charts": "^5.5.0",
+    "@elabs-ai/components-tokens": "^5.5.0",
+    "@elabs-ai/components-ui": "^5.5.0",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@nebula.js/stardust": "^7.4.0",
+    "@tailwindcss/cli": "^4.3.3",
+    "esbuild": "^0.28.2",
+    "fflate": "^0.8.3",
+    "playwright-core": "^1.63.0",
+    "postcss": "^8.5.28",
+    "tailwindcss": "^4.3.3"
+  },
+  "private": true,
+  "type": "module"
+}

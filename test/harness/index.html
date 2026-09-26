@@ -1,0 +1,14 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>qixHighDScatter harness</title>
+<style>body{margin:0;font-family:sans-serif;background:#f2f2f2} #obj{width:900px;height:560px;margin:16px;background:#fff;border:1px solid #ddd;position:relative}</style>
+<script src="/node_modules/@nebula.js/stardust/dist/stardust.dev.js"></script>
+<script>
+  // Minimal AMD shim: the extension is `define(['@nebula.js/stardust'], factory)`.
+  window.define = function (deps, factory) { window.__qhds = factory(window.stardust); };
+  window.define.amd = true;
+</script>
+<script src="/extension/qixHighDScatter/qixHighDScatter.js"></script>
+</head><body>
+<div id="obj"></div>
+<script src="/test/harness/harness.js"></script>
+</body></html>
