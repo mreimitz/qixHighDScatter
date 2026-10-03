@@ -601,13 +601,15 @@ export function App({
   }, [statsOn, version, selection, inSelections, zones]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Frame telemetry (window.__qhdsPerf.frames): bin + upload ms per frame, renderer kind.
-  const onFrame = useCallback((st: { ms: number; visible: number; renderer: string }) => {
+  const onFrame = useCallback((st: { ms: number; visible: number; renderer: string; stride: number }) => {
     const w = window as any;
-    const f = ((w.__qhdsPerf ??= {}).frames ??= { n: 0, ms: [] as number[], renderer: "" });
+    const f = ((w.__qhdsPerf ??= {}).frames ??= { n: 0, ms: [] as number[], strides: [] as number[], renderer: "" });
     f.n++;
     f.renderer = st.renderer;
     f.ms.push(Math.round(st.ms * 10) / 10);
+    (f.strides ??= []).push(st.stride);
     if (f.ms.length > 400) f.ms.splice(0, f.ms.length - 400);
+    if (f.strides.length > 400) f.strides.splice(0, f.strides.length - 400);
     f.visible = st.visible;
   }, []);
 

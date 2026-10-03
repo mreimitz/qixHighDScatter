@@ -23,9 +23,12 @@ export interface QhdsColumns {
 
 /** The engine's hard limit per NxPage; a CALL may carry many pages. */
 const CELLS_PER_PAGE = 10000;
-/** Pages per `getHyperCubeData` call: fewer round trips — the engine processes a session's requests one at a time anyway. */
-const PAGES_PER_CALL = 20;
-const CONCURRENCY = 3;
+/**
+ * Pages per `getHyperCubeData` call. Measured on Qlik Cloud 2026-10: the 10k-cell
+ * limit is per CALL (20 pages → "The hypercube results are too large"), so one.
+ */
+const PAGES_PER_CALL = 1;
+const CONCURRENCY = 6;
 /** Test hook: `window.__qhdsFetch = { pagesPerCall, concurrency }` overrides the defaults. */
 function fetchTuning(): { pagesPerCall: number; concurrency: number } {
   const o = typeof window !== "undefined" ? (window as any).__qhdsFetch : null;
@@ -196,6 +199,30 @@ export function fetchAllRows(
       }
     }
   };
+
+  // Experiment (window.__qhdsFetch.mode = "export"): time the engine's CSV export of the
+  // same cube — one streamed file instead of hundreds of 10k-cell pages. Measures only;
+  // the points still come through the pages below.
+  if (typeof window !== "undefined" && (window as any).__qhdsFetch?.mode === "export" && total > 0) {
+    void (async () => {
+      const t0 = performance.now();
+      try {
+        const r = await model.exportData("CSV_C", "/qHyperCubeDef", "", "A");
+        const t1 = performance.now();
+        const url: string = r?.qUrl ?? r;
+        const resp = await fetch(url, { credentials: "include" });
+        const text = await resp.text();
+        const t2 = performance.now();
+        let lines = 0;
+        for (let i = 0; i < text.length; i++) if (text.charCodeAt(i) === 10) lines++;
+        // eslint-disable-next-line no-console
+        console.info(`[qixHighDScatter] EXPORT experiment: exportData ${((t1 - t0) / 1000).toFixed(1)}s, fetch ${((t2 - t1) / 1000).toFixed(1)}s, ${(text.length / 1e6).toFixed(1)} MB, ${lines.toLocaleString()} lines, warnings ${JSON.stringify(r?.qWarnings ?? null)}, url ${url}, head ${JSON.stringify(text.slice(0, 160))}`);
+      } catch (e) {
+        // eslint-disable-next-line no-console
+        console.warn(`[qixHighDScatter] EXPORT experiment failed after ${((performance.now() - t0) / 1000).toFixed(1)}s`, e);
+      }
+    })();
+  }
 
   if (total === 0) {
     queueMicrotask(() => !cancelled && onProgress(cols));
