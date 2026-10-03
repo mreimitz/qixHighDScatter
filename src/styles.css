@@ -278,3 +278,19 @@
 .qhds-ze-shapepick > button:disabled { opacity: .4; cursor: default; }
 .qhds-ze-shapes .qhds-ze-center { padding: 14px 20px 10px 20px; }
 .qhds-ze-link:disabled { opacity: .4; cursor: default; }
+
+/* ---------- no-GPU warning ---------- */
+.qhds-gpu { position: absolute; z-index: 6; }
+.qhds-gpu-btn { width: 24px; height: 24px; display: inline-flex; align-items: center; justify-content: center; border: 0; border-radius: 4px;
+  background: transparent; cursor: pointer; padding: 0; }
+.qhds-gpu-btn:hover, .qhds-gpu-btn:focus-visible { background: color-mix(in oklab, #f28c28 16%, transparent); outline: none; }
+.qhds-gpu-tip { position: fixed; width: 320px; max-width: calc(100vw - 16px); max-height: calc(100vh - 16px); overflow: auto; padding: 12px 14px; border-radius: 6px; z-index: 10060;
+  background: var(--card, #fff); color: var(--foreground); border: 1px solid var(--border); border-top: 3px solid #f28c28;
+  box-shadow: 0 8px 28px rgb(0 0 0 / .18); font-size: 12px; line-height: 1.45; text-align: left; white-space: normal; }
+.qhds-gpu-tip > b { display: block; font-size: 13px; margin-bottom: 4px; }
+.qhds-gpu-tip p { margin: 6px 0; }
+.qhds-gpu-links { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.qhds-gpu-links code { font: 12px/1.4 var(--font-mono, ui-monospace, monospace); background: var(--muted, #f2f2f2); padding: 1px 6px; border-radius: 3px; user-select: all; }
+.qhds-gpu-copy { border: 1px solid var(--border); background: var(--card, #fff); color: var(--foreground); border-radius: 3px; padding: 1px 8px; font: 600 11px/1.6 var(--font-sans); cursor: pointer; }
+.qhds-gpu-copy:hover { background: var(--muted, #f2f2f2); }
+.qhds-gpu-muted { color: var(--muted-foreground); }

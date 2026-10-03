@@ -46,6 +46,29 @@ const isKind = (k: string) => (d: any) => (d.kind || "band") === k;
 const isNotKind = (k: string) => (d: any) => (d.kind || "band") !== k;
 const isBandOrRect = (d: any) => ["band", "rect"].includes(d.kind || "band");
 
+/**
+ * Explanations: the stock property panel has no info icons or popovers (custom
+ * components break uploaded extensions), so every section starts with an
+ * "Explain settings" switch that reveals a plain-language line under each setting.
+ */
+const EXPLAIN = {
+  ref: "props.explain",
+  label: "Explain settings",
+  type: "boolean",
+  component: "switch",
+  defaultValue: false,
+  options: [
+    { value: true, label: "On" },
+    { value: false, label: "Off" },
+  ],
+};
+const explaining = (d: any) => d?.props?.explain === true;
+const explain = (text: string, also?: (d: any) => boolean) => ({
+  component: "text",
+  label: text,
+  show: (d: any) => explaining(d) && (also ? also(d) : true),
+});
+
 const onOff = (ref: string, label: string, defaultValue = true) => ({
   ref,
   label,
@@ -70,6 +93,7 @@ const axisSection = (key: "xAxis" | "yAxis", ix: number, fallback: string) => ({
   label: (d: any) => axisTitle(d, ix, fallback),
   grouped: true,
   items: {
+    explainSwitch: EXPLAIN,
     show: {
       ref: `props.${key}.show`,
       label: "Labels and title",
@@ -122,6 +146,7 @@ const axisSection = (key: "xAxis" | "yAxis", ix: number, fallback: string) => ({
       defaultValue: "",
       show: (d: any) => d.props?.[key]?.autoRange === false,
     },
+    axisX: explain("Scale sets how far apart the grid lines are. Range Auto fits the data (widened to round numbers); Custom pins the axis to the Min / Max you enter — both accept expressions."),
   },
 });
 
@@ -160,6 +185,7 @@ export const initialProperties = {
     loadingIndicator: "both",
     renderMode: "live",
     funMode: true,
+    explain: false,
     shapes: { enabled: false, map: [] },
     colorBy: "zone",
     pointRadius: 1.35,
@@ -446,6 +472,8 @@ export const definition = {
           type: "items",
           label: "Zones",
           items: {
+            explainSwitch: EXPLAIN,
+            zonesX: explain("Zones are areas on the axes that classify every point (the first matching zone wins, top to bottom). Define them here or draw them in the editor; or read them from a table in the data model."),
             zoneSource: {
               ref: "props.zoneSource",
               label: "Zones from",
@@ -548,10 +576,8 @@ export const definition = {
           type: "items",
           label: "Reference lines",
           items: {
-            statLinesHint: {
-              component: "text",
-              label: "Average, median or standard-deviation lines, computed from the loaded points. \"Per colour group\" draws one line per zone (or per dimension value when colouring by dimension), in that group's colour, across that group's points. Hidden legend entries get no line.",
-            },
+            explainSwitch: EXPLAIN,
+            statLinesHint: explain("Average, median or standard-deviation lines, computed from the loaded points. “Per colour group” draws one line per zone (or per dimension value when colouring by dimension), in that group's colour, across that group's points. Hidden legend entries get no line."),
             statLines: {
               type: "array",
               ref: "props.statLines",
@@ -569,6 +595,7 @@ export const definition = {
           uses: "dataHandling",
           items: {
             calcCond: { uses: "calcCond" },
+            explainSwitch: EXPLAIN,
             maxPoints: {
               ref: "props.maxPoints",
               label: "Max points fetched",
@@ -577,6 +604,7 @@ export const definition = {
               min: 1000,
               max: 2000000,
             },
+            maxPointsX: explain("The most rows the chart loads from the engine. Loading time grows with this number (about 20 s per million on Qlik Cloud); rows beyond it are left out and a note says so."),
           },
         },
       },
@@ -589,7 +617,9 @@ export const definition = {
           label: "Presentation",
           grouped: true,
           items: {
+            explainSwitch: EXPLAIN,
             zoom: onOff("props.zoom", "Navigation (wheel zoom, drag pan)"),
+            zoomX: explain("Lets people zoom with the mouse wheel and pan by dragging. Off: the chart always shows the full picture."),
             pointRadius: {
               ref: "props.pointRadius",
               label: "Point size",
@@ -600,6 +630,7 @@ export const definition = {
               step: 0.05,
               show: (d: any) => !hasSizeMeasure(d),
             },
+            pointRadiusX: explain("How big each dot is drawn. Around 1.35 for hundreds of thousands of points; 2 or more when shapes are on.", (d) => !hasSizeMeasure(d)),
             sizeRange: {
               type: "array",
               component: "slider",
@@ -611,6 +642,7 @@ export const definition = {
               defaultValue: [1.2, 7],
               show: (d: any) => hasSizeMeasure(d),
             },
+            sizeRangeX: explain("Smallest and largest dot when the Size measure scales them. Dots scale by area, so twice the value is twice the area.", (d) => hasSizeMeasure(d)),
             pointOpacity: {
               ref: "props.pointOpacity",
               label: "Point opacity",
@@ -621,6 +653,7 @@ export const definition = {
               step: 0.05,
               defaultValue: 1,
             },
+            pointOpacityX: explain("How see-through each dot is. Lower values let dense areas build up darker where many dots overlap."),
             densityFloor: {
               ref: "props.densityFloor",
               label: "Sparse point strength (low = lone points fade, 1 = full colour)",
@@ -631,6 +664,7 @@ export const definition = {
               step: 0.05,
               defaultValue: 0.55,
             },
+            densityFloorX: explain("How strongly a lone dot is coloured. Low: isolated dots fade into the background so clusters stand out. 1: every dot in full colour."),
             cellSize: {
               ref: "props.cellSize",
               label: "Density resolution (cell size, px)",
@@ -640,15 +674,20 @@ export const definition = {
               max: 12,
               step: 1,
             },
+            cellSizeX: explain("The chart measures density in small screen squares of this size. Smaller squares give finer colour detail but cost more work per frame."),
             underlay: {
               ref: "props.underlay",
               label: "Density underlay from (points per cell, 0 = off)",
               type: "number",
               defaultValue: 4,
             },
+            underlayX: explain("A soft coloured body is painted under areas with at least this many points per square, so dense clusters read as a shape. 0 turns it off."),
             showOutlines: onOff("props.showOutlines", "Zone outlines"),
+            showOutlinesX: explain("Draws the border of every zone on the plot."),
             showZoneTags: onOff("props.showZoneTags", "Zone tags in plot"),
+            showZoneTagsX: explain("Small labels with the zone names inside the plot. Clicking a tag selects that zone's points."),
             showStats: onOff("props.showStats", "Show statistics (on surface / visible / selected)", false),
+            showStatsX: explain("A small box with three counts: points loaded, points inside the current zoom window, and points selected."),
           },
         },
         loading: {
@@ -656,6 +695,7 @@ export const definition = {
           label: "Loading",
           grouped: true,
           items: {
+            explainSwitch: EXPLAIN,
             renderMode: {
               ref: "props.renderMode",
               label: "While the points load",
@@ -679,10 +719,8 @@ export const definition = {
               ],
               show: (d: any) => d.props?.renderMode === "animated",
             },
-            renderModeHint: {
-              component: "text",
-              label: "\"Draw as they arrive\" fills the plot page by page. \"Loading animation\" shows an animation with a progress bar and draws every point at once when all are in — the fastest way to load large sets.",
-            },
+            renderModeHint: explain("Draw as they arrive: the plot fills page by page while the data streams in. Loading animation: nothing but the animation until every point is in, then the whole chart appears at once — the fastest way to load large sets."),
+            funModeX: explain("On: the robot paints a scatter plot in step with the loading progress. Off: a plain spinner with the progress bar.", (d) => d.props?.renderMode === "animated"),
             loadingIndicator: {
               ref: "props.loadingIndicator",
               label: "Progress indicator",
@@ -696,6 +734,7 @@ export const definition = {
                 { value: "none", label: "None" },
               ],
             },
+            loadingIndicatorX: explain("What shows the loading progress: a thin bar along the top edge of the chart, a “12,500 of 1,000,000 points” text, both, or nothing."),
           },
         },
         shapes: {
@@ -703,6 +742,7 @@ export const definition = {
           label: "Shapes",
           grouped: true,
           items: {
+            explainSwitch: EXPLAIN,
             shapesEnabled: {
               ref: "props.shapes.enabled",
               label: "Shape by dimension (2nd dimension)",
@@ -714,11 +754,8 @@ export const definition = {
                 { value: false, label: "Off" },
               ],
             },
-            shapesHint: {
-              component: "text",
-              label: "Each value of the 2nd dimension is drawn as its own glyph (circle, square, triangle up/down, diamond, plus, minus, cross, star, hexagon). Values without an assignment take the next free glyph. A larger point size makes the glyphs easier to tell apart.",
-              show: (d: any) => d.props?.shapes?.enabled === true,
-            },
+            shapesHint: explain("Each value of the 2nd dimension is drawn as its own glyph (circle, square, triangle up/down, diamond, plus, minus, cross, star, hexagon) on top of the colour. Values without an assignment take the next free glyph. A larger point size makes the glyphs easier to tell apart."),
+            shapeMapX: explain("Pin a glyph to a value here or in the editor's Shapes tab. The value must match the dimension's text exactly.", (d) => d.props?.shapes?.enabled === true),
             editShapes: {
               component: "button",
               label: "Edit shapes…",
@@ -767,6 +804,7 @@ export const definition = {
           label: "Colors and legend",
           grouped: true,
           items: {
+            explainSwitch: EXPLAIN,
             colorBy: {
               ref: "props.colorBy",
               label: "Color by",
@@ -779,6 +817,7 @@ export const definition = {
                 { value: "density", label: "Density only" },
               ],
             },
+            colorByX: explain("Zone: each dot takes the colour of the zone it falls in. Dimension: the colour of its 2nd-dimension value. Measure: a light-to-dark ramp over the 4th measure. Density only: one colour, darker where points pile up."),
             legendShow: {
               ref: "props.legendShow",
               label: "Show legend",
@@ -831,6 +870,7 @@ export const definition = {
               show: (d: any) =>
                 d.props?.legendShow !== false && ["zone", "category"].includes(d.props?.colorBy || "zone"),
             },
+            legendX: explain("Auto puts the legend to the right of a wide chart and under a narrow one. Legends never wrap: a bottom legend scrolls sideways, a side legend scrolls vertically, and both hide when the chart gets too small.", (d) => d.props?.legendShow !== false),
           },
         },
         xAxis: axisSection("xAxis", 0, "X-axis"),

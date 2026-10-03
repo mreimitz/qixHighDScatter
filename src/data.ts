@@ -43,6 +43,29 @@ function num(cell: any): number {
   return typeof v === "number" ? v : NaN;
 }
 
+/**
+ * The engine cancels a page request when an "exclusive" request for the same
+ * object arrives (a selection, a property patch, a calc): "Request aborted
+ * (Exclusive request aborted family requests)", error code 15. That is not a
+ * failure of the data — the page is simply asked for again, a little later.
+ */
+function isAbort(e: unknown): boolean {
+  const code = (e as any)?.code;
+  const msg = String((e as any)?.message ?? (e as any)?.parameter ?? e ?? "");
+  return code === 15 || /aborted/i.test(msg);
+}
+
+async function withRetry<T>(call: () => Promise<T>, cancelled: () => boolean, attempts = 6): Promise<T> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await call();
+    } catch (e) {
+      if (cancelled() || !isAbort(e) || attempt >= attempts - 1) throw e;
+      await new Promise((r) => setTimeout(r, 120 * (attempt + 1)));
+    }
+  }
+}
+
 export interface FetchHandle {
   cancel(): void;
 }
@@ -181,7 +204,7 @@ export function fetchAllRows(
         req.push({ qTop, qLeft: 0, qWidth: width, qHeight: Math.min(pageH, total - qTop) });
       }
       const tReq = performance.now();
-      const res: any[] = await model.getHyperCubeData("/qHyperCubeDef", req);
+      const res: any[] = await withRetry(() => model.getHyperCubeData("/qHyperCubeDef", req), () => cancelled);
       const tGot = performance.now();
       perf.calls++;
       perf.waitMs += tGot - tReq;

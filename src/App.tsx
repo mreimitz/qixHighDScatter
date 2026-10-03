@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { type CSSProperties, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   DensityScatterChart,
   type DensityColorBy,
@@ -50,6 +50,30 @@ export interface AppProps {
 }
 
 const EMPTY_KEYS: ReadonlySet<string> = new Set();
+
+/** Whether this browser gives us a GPU (WebGL). Probed once per page. */
+let gpuProbe: boolean | null = null;
+function hasGpu(): boolean {
+  if (gpuProbe !== null) return gpuProbe;
+  try {
+    const c = document.createElement("canvas");
+    const gl = c.getContext("webgl") || c.getContext("experimental-webgl");
+    gpuProbe = Boolean(gl);
+    (gl as WebGLRenderingContext | null)?.getExtension("WEBGL_lose_context")?.loseContext();
+  } catch {
+    gpuProbe = false;
+  }
+  return gpuProbe;
+}
+/** Where hardware acceleration is switched on, for the browser we are in. */
+function accelerationHelp(): { browser: string; settings: string; status: string; steps: string } {
+  const ua = navigator.userAgent;
+  if (/Edg\//.test(ua))
+    return { browser: "Microsoft Edge", settings: "edge://settings/system", status: "edge://gpu", steps: "Settings › System and performance › turn on “Use graphics acceleration when available”, then restart Edge." };
+  if (/Firefox\//.test(ua))
+    return { browser: "Firefox", settings: "about:preferences#general", status: "about:support", steps: "Settings › General › Performance › turn on “Use recommended performance settings” (or “Use hardware acceleration when available”), then restart Firefox." };
+  return { browser: "Chrome", settings: "chrome://settings/system", status: "chrome://gpu", steps: "Settings › System › turn on “Use graphics acceleration when available”, then click Relaunch." };
+}
 /** How often streamed points are handed to the chart while loading (ms). */
 const PUBLISH_MS = 400;
 /** The plot keeps at least this much room; everything else hides first. */
@@ -171,7 +195,10 @@ export function App({
         }
         if (!timer) timer = setTimeout(publish, Math.max(0, PUBLISH_MS - (performance.now() - lastPublish)));
       },
-      (e) => setError(String((e as any)?.message ?? e)),
+      (e) => {
+        lastKey.current = "";
+        setError(String((e as any)?.message ?? e));
+      },
     );
     return () => {
       if (timer) clearTimeout(timer);
@@ -600,6 +627,28 @@ export function App({
     return k;
   }, [statsOn, version, selection, inSelections, zones]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // No GPU: a small warning near the legend; its popover says where to turn acceleration on.
+  const noGpu = typeof document !== "undefined" && !hasGpu();
+  const [gpuTip, setGpuTip] = useState<"off" | "hover" | "pinned">("off");
+  const gpuHelp = useMemo(accelerationHelp, []);
+  // The popover is fixed-positioned (it is taller than a small object), anchored to the icon.
+  const gpuBtnRef = useRef<HTMLButtonElement | null>(null);
+  const gpuTipStyle = (): CSSProperties => {
+    const r = gpuBtnRef.current?.getBoundingClientRect();
+    if (!r) return {};
+    const W = 320;
+    const left = Math.max(8, Math.min(r.right - W, window.innerWidth - W - 8));
+    const above = r.top > window.innerHeight * 0.55;
+    return above ? { left, bottom: window.innerHeight - r.top + 6 } : { left, top: r.bottom + 6 };
+  };
+  const copy = (text: string) => {
+    try {
+      void navigator.clipboard?.writeText(text);
+    } catch {
+      /* clipboard unavailable: the text is visible to type */
+    }
+  };
+
   // Frame telemetry (window.__qhdsPerf.frames): bin + upload ms per frame, renderer kind.
   const onFrame = useCallback((st: { ms: number; visible: number; renderer: string; stride: number }) => {
     const w = window as any;
@@ -845,6 +894,70 @@ export function App({
               {i.zone}: {i.message}
             </span>
           ))}
+        </div>
+      )}
+      {noGpu && !tiny && (
+        <div
+          className="qhds-gpu"
+          // Below a side legend (bottom-right corner), at the right end of a bottom
+          // legend's row, else the top-right corner under Qlik's hover menu.
+          data-pos={legendOn ? legendPos : "none"}
+          style={
+            legendOn && legendPos === "bottom"
+              ? { right: 8, bottom: Math.max(4, (legendH - 16 - 22) / 2) + shapeKeyH }
+              : legendOn && legendPos === "right"
+                ? { right: 8, bottom: 8 + shapeKeyH }
+                : { right: 8, top: 40 }
+          }
+          onMouseEnter={() => setGpuTip((t) => (t === "pinned" ? t : "hover"))}
+          onMouseLeave={() => setGpuTip((t) => (t === "pinned" ? t : "off"))}
+        >
+          <button
+            aria-describedby="qhds-gpu-tip"
+            aria-expanded={gpuTip !== "off"}
+            aria-label="Graphics acceleration is off in this browser"
+            className="qhds-gpu-btn"
+            onBlur={() => setGpuTip("off")}
+            onClick={() => setGpuTip((t) => (t === "pinned" ? "off" : "pinned"))}
+            onFocus={() => setGpuTip((t) => (t === "pinned" ? t : "hover"))}
+            ref={gpuBtnRef}
+            type="button"
+          >
+            <svg aria-hidden="true" height="18" viewBox="0 0 18 18" width="18">
+              <path d="M9 2 1.5 15.5h15L9 2z" fill="#f28c28" />
+              <path d="M9 6.5v4.3M9 13.2v.2" stroke="#fff" strokeLinecap="round" strokeWidth="1.8" />
+            </svg>
+          </button>
+          {gpuTip !== "off" && (
+            <div className="qhds-gpu-tip" id="qhds-gpu-tip" role="tooltip" style={gpuTipStyle()}>
+              <b>Graphics acceleration is off</b>
+              <p>
+                {gpuHelp.browser} is not giving this page a GPU, so the points are drawn by the processor.
+                Loading looks the same, but panning and zooming are slower than they could be.
+              </p>
+              <p>
+                <strong>Turn it on:</strong> {gpuHelp.steps}
+              </p>
+              <p className="qhds-gpu-links">
+                <span>Settings page:</span>
+                <code>{gpuHelp.settings}</code>
+                <button className="qhds-gpu-copy" onClick={() => copy(gpuHelp.settings)} type="button">
+                  Copy
+                </button>
+              </p>
+              <p className="qhds-gpu-links">
+                <span>Check status:</span>
+                <code>{gpuHelp.status}</code>
+                <button className="qhds-gpu-copy" onClick={() => copy(gpuHelp.status)} type="button">
+                  Copy
+                </button>
+              </p>
+              <p className="qhds-gpu-muted">
+                Browsers do not let a page open these addresses — paste them into the address bar. On a managed
+                company computer the setting may be locked by IT policy.
+              </p>
+            </div>
+          )}
         </div>
       )}
       {editorOpen ? (
