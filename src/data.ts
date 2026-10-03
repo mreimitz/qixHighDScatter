@@ -21,8 +21,19 @@ export interface QhdsColumns {
   done: boolean;
 }
 
+/** The engine's hard limit per NxPage; a CALL may carry many pages. */
 const CELLS_PER_PAGE = 10000;
-const CONCURRENCY = 6;
+/** Pages per `getHyperCubeData` call: fewer round trips — the engine processes a session's requests one at a time anyway. */
+const PAGES_PER_CALL = 20;
+const CONCURRENCY = 3;
+/** Test hook: `window.__qhdsFetch = { pagesPerCall, concurrency }` overrides the defaults. */
+function fetchTuning(): { pagesPerCall: number; concurrency: number } {
+  const o = typeof window !== "undefined" ? (window as any).__qhdsFetch : null;
+  return {
+    pagesPerCall: Math.max(1, Number(o?.pagesPerCall) || PAGES_PER_CALL),
+    concurrency: Math.max(1, Number(o?.concurrency) || CONCURRENCY),
+  };
+}
 
 function num(cell: any): number {
   const v = cell?.qNum;
@@ -116,15 +127,12 @@ export function fetchAllRows(
     if (changed || cols.done) onProgress(cols);
   };
 
+  const { pagesPerCall, concurrency } = fetchTuning();
+  // Telemetry (window.__qhdsPerf): where the loading time goes.
+  const perf = { t0: performance.now(), pages, pageH, width, total, pagesPerCall, concurrency, calls: 0, waitMs: 0, jsMs: 0, cells: 0, firstPageMs: 0 };
   let next = 0;
-  const worker = async (): Promise<void> => {
-    while (!cancelled && next < pages) {
-      const p = next++;
-      const qTop = p * pageH;
-      const qHeight = Math.min(pageH, total - qTop);
-      const res = await model.getHyperCubeData("/qHyperCubeDef", [{ qTop, qLeft: 0, qWidth: width, qHeight }]);
-      if (cancelled) return;
-      const matrix: any[][] = res?.[0]?.qMatrix ?? [];
+  const processPage = (p: number, matrix: any[][]) => {
+      perf.cells += matrix.length * width;
       const x = new Float32Array(matrix.length);
       const y = new Float32Array(matrix.length);
       const v = vCol >= 0 ? new Float32Array(matrix.length) : undefined;
@@ -159,14 +167,40 @@ export function fetchAllRows(
         rows++;
       }
       staged[p] = { rows, x, y, e, t, st, v, sz, c };
+  };
+  const worker = async (): Promise<void> => {
+    while (!cancelled && next < pages) {
+      const first = next;
+      next = Math.min(pages, next + pagesPerCall);
+      const req = [];
+      for (let p = first; p < next; p++) {
+        const qTop = p * pageH;
+        req.push({ qTop, qLeft: 0, qWidth: width, qHeight: Math.min(pageH, total - qTop) });
+      }
+      const tReq = performance.now();
+      const res: any[] = await model.getHyperCubeData("/qHyperCubeDef", req);
+      const tGot = performance.now();
+      perf.calls++;
+      perf.waitMs += tGot - tReq;
+      if (!perf.firstPageMs) perf.firstPageMs = tGot - perf.t0;
+      if (cancelled) return;
+      for (let i = 0; i < req.length; i++) processPage(first + i, res?.[i]?.qMatrix ?? []);
       commit();
+      perf.jsMs += performance.now() - tGot;
+      if (cols.done) {
+        const totalMs = performance.now() - perf.t0;
+        const w = window as any;
+        (w.__qhdsPerf ??= {}).load = { ...perf, totalMs };
+        // eslint-disable-next-line no-console
+        console.info(`[qixHighDScatter] loaded ${cols.n.toLocaleString()} rows in ${(totalMs / 1000).toFixed(1)}s — ${perf.calls} calls × ${pagesPerCall} pages × ${pageH} rows (${width} cols), ${concurrency} in flight, first data ${(perf.firstPageMs / 1000).toFixed(1)}s, engine wait ${(perf.waitMs / 1000).toFixed(1)}s summed, JS ${(perf.jsMs / 1000).toFixed(1)}s`);
+      }
     }
   };
 
   if (total === 0) {
     queueMicrotask(() => !cancelled && onProgress(cols));
   } else {
-    Promise.all(Array.from({ length: Math.min(CONCURRENCY, pages) }, worker)).catch((e) => {
+    Promise.all(Array.from({ length: Math.min(concurrency, pages) }, worker)).catch((e) => {
       if (!cancelled) onError(e);
     });
   }

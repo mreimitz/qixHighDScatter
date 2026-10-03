@@ -600,6 +600,17 @@ export function App({
     return k;
   }, [statsOn, version, selection, inSelections, zones]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Frame telemetry (window.__qhdsPerf.frames): bin + upload ms per frame, renderer kind.
+  const onFrame = useCallback((st: { ms: number; visible: number; renderer: string }) => {
+    const w = window as any;
+    const f = ((w.__qhdsPerf ??= {}).frames ??= { n: 0, ms: [] as number[], renderer: "" });
+    f.n++;
+    f.renderer = st.renderer;
+    f.ms.push(Math.round(st.ms * 10) / 10);
+    if (f.ms.length > 400) f.ms.splice(0, f.ms.length - 400);
+    f.visible = st.visible;
+  }, []);
+
   // ---------- zone editor ----------
   const [editorOpen, setEditorOpen] = useState(false);
   const [editorTab, setEditorTab] = useState<"zones" | "shapes">("zones");
@@ -774,6 +785,7 @@ export function App({
         domain={domain}
         zoneTags={props.showZoneTags !== false && roomy}
         shapeBy={shapeBy}
+        onFrame={onFrame}
       />
       {shapeKeyOn && (
         <div aria-label={`Shapes by ${catTitle}`} className="qhds-shapekey" role="group" style={{ height: SHAPE_KEY_H }}>
