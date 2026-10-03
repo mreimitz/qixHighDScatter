@@ -138,6 +138,12 @@ Selections are real Qlik selections:
 - If the chart feels sluggish, check that the browser's hardware acceleration is on (the small orange sign near the legend says where). Without it, the chart falls back to the slower Canvas2D renderer.
 - Diagnostics: the console line `[qixHighDScatter] loaded …` breaks down each load; `window.__qhdsPerf.load` holds the same numbers.
 
+## Release
+
+1. Bump `version` in `package.json` and `extension/qixHighDScatter/qixHighDScatter.qext`, add a `## <version>` section to `CHANGELOG.md`.
+2. `npm run build && npm run package` → commit `release/qixHighDScatter-v<version>.zip` with the rest.
+3. Push a tag `v<version>` (or run the **Release** workflow from the Actions tab with the version). The workflow publishes the GitHub release with that CHANGELOG section as notes and the zip attached.
+
 ## Develop
 
 ```bash
