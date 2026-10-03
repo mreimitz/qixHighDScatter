@@ -22,7 +22,8 @@ import robotLoaderSvg from "./assets/robot-scatter-loader.svg";
  */
 const ROBOT_FREE = robotLoaderSvg;
 const ROBOT_CONTROLLED = robotLoaderSvg.replace("<svg ", '<svg class="qhds-rl-controlled" ');
-import { fetchAllRows, type QhdsColumns } from "./data";
+import { appReloadTime, disposePacked, fetchAllRows, fetchPacked, fetchPackedIds, type FetchHandle, type FullCache, type PackedCache, type PackedPlan, planPacked, pointIdIsUnique, type QhdsColumns, subsetFromCache } from "./data";
+import { runProbes } from "./probe";
 import { toDensityZones } from "./zones";
 import { watchZoneTable } from "./data-zones";
 import { ZoneEditor } from "./editor/ZoneEditor";
@@ -76,6 +77,9 @@ function accelerationHelp(): { browser: string; settings: string; status: string
 }
 /** How often streamed points are handed to the chart while loading (ms). */
 const PUBLISH_MS = 400;
+/** Paged preview while the engine packs: only worth it above this many points, and capped. */
+const PREVIEW_MIN_TOTAL = 300_000;
+const PREVIEW_MAX = 200_000;
 /** The plot keeps at least this much room; everything else hides first. */
 const MIN_PLOT_W = 200;
 const MIN_PLOT_H = 130;
@@ -144,13 +148,28 @@ export function App({
   const [version, setVersion] = useState(0);
   // Nothing is "loading" until a fetch actually starts; the total is known from
   // the hypercube before the first page, so the bar is determinate from the start.
-  const [progress, setProgress] = useState<{ n: number; total: number; done: boolean }>({ n: 0, total: 0, done: true });
+  const [progress, setProgress] = useState<{ n: number; total: number; done: boolean; phase?: "calc" | "transfer" }>({ n: 0, total: 0, done: true });
   const [error, setError] = useState<string | null>(null);
   const key = dataKey(layout);
   const lastKey = useRef<string>("");
   // "live": points appear as they arrive. "animated": a loading animation with
   // the progress bar, then every point at once (also the cheapest way to load).
   const renderMode: "live" | "animated" = props.renderMode === "animated" ? "animated" : "live";
+  // Transport: "auto" packs the points into one text measure of a session cube
+  // (3× faster on Qlik Cloud, see data.ts); "paged" is the plain cube paging.
+  const transport: "auto" | "paged" = props.transport === "paged" ? "paged" : "auto";
+  const packedCache = useRef<PackedCache>({});
+  const idCache = useRef<PackedCache>({});
+  // A full load (nothing excluded) is kept: later selections only need the list
+  // of possible ids from the engine (a quarter of the bytes, no x/y re-read).
+  const fullCache = useRef<FullCache | null>(null);
+  useEffect(
+    () => () => {
+      void disposePacked(app, packedCache.current);
+      void disposePacked(app, idCache.current);
+    },
+    [app],
+  );
   useEffect(() => {
     if (!hc || hc.qError || hc.qCalcCondMsg) return;
     if (hc.qDimensionInfo.length < 1 || hc.qMeasureInfo.length < 2) return;
@@ -160,12 +179,15 @@ export function App({
     lastKey.current = key;
     setError(null);
     const maxPts = Math.max(1000, Number(props.maxPoints) || 1_000_000);
-    const expected = Math.min(Number(hc.qSize?.qcy) || 0, maxPts);
+    const qcy = Number(hc.qSize?.qcy) || 0;
+    const expected = Math.min(qcy, maxPts);
     setProgress({ n: 0, total: expected, done: expected === 0 });
     let latest: QhdsColumns | null = null;
     let timer: ReturnType<typeof setTimeout> | null = null;
     let lastPublish = 0;
     let published = false;
+    let stopped = false;
+    const handles: FetchHandle[] = [];
     const publish = () => {
       timer = null;
       if (!latest) return;
@@ -174,39 +196,139 @@ export function App({
       setCols(latest);
       setVersion((v) => v + 1);
     };
-    const handle = fetchAllRows(
-      model,
-      hc,
-      maxPts,
-      legacyColor3(layout),
-      (c) => {
-        latest = c;
-        setProgress((p) => (p.n === c.n && p.total === c.total && p.done === c.done ? p : { n: c.n, total: c.total, done: c.done }));
-        if (c.done) {
-          if (timer) clearTimeout(timer);
-          publish();
-          return;
+    const onErr = (e: unknown) => {
+      lastKey.current = "";
+      setError(String((e as any)?.message ?? e));
+    };
+    // Progress of the authoritative load (the preview never drives the bar).
+    const trackProgress = (c: QhdsColumns) =>
+      setProgress((p) => (p.n === c.n && p.total === c.total && p.done === c.done && p.phase === c.phase ? p : { n: c.n, total: c.total, done: c.done, phase: c.phase }));
+    let previewN = 0;
+    const feed = (c: QhdsColumns, authoritative: boolean) => {
+      if (stopped) return;
+      if (authoritative) trackProgress(c);
+      else previewN = c.n;
+      // While the packed cube is being built, the chart shows the paged preview —
+      // and keeps it until the packed points outnumber it (no shrinking picture).
+      if (authoritative && !c.done && c.n < previewN) return;
+      latest = c;
+      if (c.done) {
+        if (timer) clearTimeout(timer);
+        publish();
+        if (app) (window as any).__qhdsRunProbe = () => runProbes(app, model, hc);
+        return;
+      }
+      if (renderMode === "animated") return;
+      // First page right away (something to look at), then at most every PUBLISH_MS.
+      if (!published) {
+        publish();
+        return;
+      }
+      if (!timer) timer = setTimeout(publish, Math.max(0, PUBLISH_MS - (performance.now() - lastPublish)));
+    };
+    // The preview is deliberately light (2 requests in flight, at most PREVIEW_MAX
+    // rows): it shares the engine and the link with the packed load it precedes.
+    const paged = (authoritative: boolean) =>
+      fetchAllRows(
+        model,
+        hc,
+        authoritative ? maxPts : Math.min(maxPts, PREVIEW_MAX),
+        legacyColor3(layout),
+        (c) => feed(c, authoritative),
+        authoritative ? onErr : () => undefined,
+        authoritative ? {} : { concurrency: 2 },
+      );
+    const start = async () => {
+      let plan: PackedPlan | null = null;
+      if (transport === "auto" && app && qcy > 0 && qcy <= maxPts) {
+        try {
+          const unique = await pointIdIsUnique(app, model);
+          plan = await planPacked(app, model, hc, legacyColor3(layout), unique);
+        } catch {
+          plan = null;
         }
-        if (renderMode === "animated") return;
-        // First page right away (something to look at), then at most every PUBLISH_MS.
-        if (!published) {
-          publish();
-          return;
-        }
-        if (!timer) timer = setTimeout(publish, Math.max(0, PUBLISH_MS - (performance.now() - lastPublish)));
-      },
-      (e) => {
-        lastKey.current = "";
-        setError(String((e as any)?.message ?? e));
-      },
-    );
+      }
+      if (stopped) return;
+      if (!plan) {
+        handles.push(paged(true));
+        return;
+      }
+      const sc = hc.qDimensionInfo?.[0]?.qStateCounts ?? {};
+      const hasSel = (sc.qSelected ?? 0) > 0;
+      const nothingExcluded = (sc.qExcluded ?? 0) + (sc.qAlternative ?? 0) + (sc.qSelectedExcluded ?? 0) === 0;
+      const planKey = JSON.stringify(plan.def);
+      const reloadTime = plan.rowLevel ? await appReloadTime(app) : "";
+      if (stopped) return;
+      const full = fullCache.current;
+      if (plan.rowLevel && full && full.planKey === planKey && full.reloadTime === reloadTime && !nothingExcluded && qcy <= full.cols.n) {
+        // Selection on a cached full load: ids only, then cut locally.
+        const t0 = performance.now();
+        const h = fetchPackedIds(app, plan, idCache.current, (phase) => {
+          if (!stopped) setProgress({ n: 0, total: expected, done: false, phase });
+        });
+        handles.push(h);
+        h.promise
+          .then((ids) => {
+            if (stopped) return;
+            const sub = subsetFromCache(full, ids, hasSel);
+            // eslint-disable-next-line no-console
+            console.info(`[qixHighDScatter] selection: ${sub.n.toLocaleString()} of ${full.cols.n.toLocaleString()} cached points in ${((performance.now() - t0) / 1000).toFixed(1)}s (ids only)`);
+            feed(sub, true);
+          })
+          .catch((e) => {
+            if (stopped) return;
+            // eslint-disable-next-line no-console
+            console.warn("[qixHighDScatter] id list failed, loading points instead", e);
+            void disposePacked(app, idCache.current);
+            handles.push(paged(true));
+          });
+        return;
+      }
+      // Live mode: a paged preview fills the picture while the engine packs;
+      // it is stopped as soon as the packed points start arriving.
+      let preview: FetchHandle | null = renderMode === "live" && expected > PREVIEW_MIN_TOTAL ? paged(false) : null;
+      if (preview) handles.push(preview);
+      handles.push(
+        fetchPacked(
+          app,
+          plan,
+          packedCache.current,
+          expected,
+          hasSel,
+          (c) => {
+            if (preview && c.phase === "transfer") {
+              preview.cancel();
+              preview = null;
+            }
+            if (c.done && plan.rowLevel && nothingExcluded && qcy === expected) {
+              fullCache.current = { planKey, reloadTime, cols: c, index: null };
+            }
+            feed(c, true);
+          },
+          (e) => {
+            // The packed cube failed (an expression the engine rejects, say): plain paging instead.
+            if (stopped) return;
+            // eslint-disable-next-line no-console
+            console.warn("[qixHighDScatter] packed transport failed, paging instead", e);
+            if (preview) {
+              preview.cancel();
+              preview = null;
+            }
+            void disposePacked(app, packedCache.current);
+            handles.push(paged(true));
+          },
+        ),
+      );
+    };
+    void start();
     return () => {
+      stopped = true;
       if (timer) clearTimeout(timer);
-      handle.cancel();
+      for (const h of handles) h.cancel();
       // allow the same key to be fetched again if this effect was torn down mid-way
       lastKey.current = "";
     };
-  }, [key, inSelections, renderMode]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [key, inSelections, renderMode, transport]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // The chart treats `data` identity as "data changed": hand it a new wrapper per progress step.
   const data = useMemo(() => {
@@ -351,10 +473,27 @@ export function App({
         // point-dimension values — toggled on when the shapes don't already cover them.
         const picked = sel?.points ?? [];
         const shapes: DensityScatterSelection | undefined = sel ? { ...sel, points: undefined } : undefined;
-        const plan = planSelection(shapes, zonesRef.current, domainRef.current);
+        let plan = planSelection(shapes, zonesRef.current, domainRef.current);
         const c = colsRef.current;
         const elemsOf = (idx: readonly number[]) =>
           [...new Set(idx.map((i) => c.elems[i] ?? -1).filter((e) => e >= 0))];
+        if (picked.length && c.elems.length === 0) {
+          // Packed transport carries no element numbers: a picked dot is selected
+          // as a hair-thin measure range around its position instead.
+          const d = domainRef.current;
+          const ex = (d ? Math.abs(d.x1 - d.x0) : 1) * 1e-7;
+          const ey = (d ? Math.abs(d.y1 - d.y0) : 1) * 1e-7;
+          const dots = picked.map((i) => {
+            const x = c.x[i]!;
+            const y = c.y[i]!;
+            const px = Math.abs(x) * 1e-6 + ex;
+            const py = Math.abs(y) * 1e-6 + ey;
+            return { x0: x - px, x1: x + px, y0: y - py, y1: y + py };
+          });
+          plan = { rects: [...(plan.rects ?? []), ...dots] };
+          await selections.select(toEngineSelect(plan));
+          return;
+        }
         if (plan.rects === null) {
           await selections.select(
             picked.length
@@ -725,7 +864,15 @@ export function App({
   const xTitle = hc.qMeasureInfo[0]?.qFallbackTitle;
   const yTitle = hc.qMeasureInfo[1]?.qFallbackTitle;
   const loading = !progress.done && !error;
-  const pct = progress.total > 0 ? Math.min(100, Math.round((100 * progress.n) / progress.total)) : null;
+  // Packed transport, "calc" phase: the engine is building the cube and there is
+  // no count to show — the bar runs indeterminate and the text says "Preparing".
+  const preparing = progress.phase === "calc";
+  const pct = preparing ? null : progress.total > 0 ? Math.min(100, Math.round((100 * progress.n) / progress.total)) : null;
+  const loadingText = preparing
+    ? `Preparing ${fmt(progress.total)} points…`
+    : progress.total > 0
+      ? `Loading ${fmt(progress.n)} of ${fmt(progress.total)} points${pct === null ? "" : ` · ${pct}%`}`
+      : "Loading points…";
   // Loading indicator: the bar along the top edge and/or the "n / total" text.
   const indicator: string = typeof props.loadingIndicator === "string" ? props.loadingIndicator : "both";
   // "animated": the points stay back until every page is in; a loading card
@@ -765,11 +912,7 @@ export function App({
             </div>
           )}
           {wantText && !tiny && (
-            <span className="qhds-loader-text">
-              {progress.total > 0
-                ? `Loading ${fmt(progress.n)} of ${fmt(progress.total)} points${pct === null ? "" : ` · ${pct}%`}`
-                : "Loading points…"}
-            </span>
+            <span className="qhds-loader-text">{loadingText}</span>
           )}
         </div>
       </div>
@@ -885,9 +1028,7 @@ export function App({
       {(showText || (editMode && issues.length > 0)) && (
         <div className="qhds-status" aria-live="polite">
           {showText && (
-            <span>
-              Loading {fmt(progress.n)} / {fmt(progress.total)} points{pct === null ? "" : ` · ${pct}%`}
-            </span>
+            <span>{preparing ? loadingText : `Loading ${fmt(progress.n)} / ${fmt(progress.total)} points${pct === null ? "" : ` · ${pct}%`}`}</span>
           )}
           {(editMode ? issues : []).map((i) => (
             <span key={i.zone + i.message} className="qhds-warn">

@@ -132,9 +132,11 @@ Selections are real Qlik selections:
 
 ## Performance
 
-- Loading 1M points from Qlik Cloud takes around 20 seconds. The data comes in pages, and points are drawn as they arrive.
-- Pan and zoom stay smooth with WebGL.
-- If the chart feels sluggish, check that the browser's hardware acceleration is on. Without it, the chart falls back to the slower Canvas2D renderer.
+- **Packed transport** (default, _Data handling › Transport_): the chart asks the engine for a session cube whose one measure bundles the points as compact text (`id⇥x⇥y…`, about 25 bytes per point, in ~1,000 hash buckets) instead of reading the chart's own table, which costs ~62 bytes per _cell_ on the wire. On Qlik Cloud 1M points now take about 6–8 s (4–6 s for the engine to build the cube, ~1.5 s to transfer) instead of 20 s; 200k points about 2 s instead of 4. In _Draw as they arrive_ mode a light preview of the plain table fills the picture while the engine packs. Packing needs field (not calculated) dimensions and at most two of them; otherwise, or with _Plain paging_ selected, the chart pages the table as before.
+- **Selections on a cached load**: when the point dimension has one data row per value, the first full load is kept, and a later selection only asks the engine for the list of possible ids (a quarter of the bytes) and cuts the cached points locally — typically 0.5–2 s for any selection, instead of a full reload. An app reload invalidates the cache.
+- Pan and zoom stay smooth with WebGL; without a GPU the chart drops to a coarser level of detail while you interact and refines when you stop.
+- If the chart feels sluggish, check that the browser's hardware acceleration is on (the small orange sign near the legend says where). Without it, the chart falls back to the slower Canvas2D renderer.
+- Diagnostics: the console line `[qixHighDScatter] loaded …` breaks down each load; `window.__qhdsPerf.load` holds the same numbers.
 
 ## Develop
 
