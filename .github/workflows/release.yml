@@ -1,0 +1,57 @@
+# Publishes a GitHub release for a version: notes = that version's CHANGELOG.md section,
+# asset = the committed release/qixHighDScatter-v<version>.zip.
+# The zip is not rebuilt here: the build needs the unpublished brand-ui branch (README › Develop).
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to release, without the v (e.g. 0.7.0). The tag v<version> must already exist."
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    env:
+      VERSION: ${{ inputs.version || github.ref_name }}
+    steps:
+      - name: Resolve version
+        run: |
+          v="${VERSION#v}"
+          echo "VERSION=$v" >> "$GITHUB_ENV"
+          echo "TAG=v$v" >> "$GITHUB_ENV"
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && format('refs/tags/v{0}', inputs.version) || github.ref }}
+
+      - name: Check version, zip and notes
+        run: |
+          pkg=$(node -p "require('./package.json').version")
+          qext=$(node -p "JSON.parse(require('fs').readFileSync('extension/qixHighDScatter/qixHighDScatter.qext','utf8')).version")
+          [ "$pkg" = "$VERSION" ] || { echo "::error::package.json is $pkg, tag is $TAG"; exit 1; }
+          [ "$qext" = "$VERSION" ] || { echo "::error::qext is $qext, tag is $TAG"; exit 1; }
+          zip="release/qixHighDScatter-v$VERSION.zip"
+          [ -f "$zip" ] || { echo "::error::$zip is not committed (npm run build && npm run package)"; exit 1; }
+          echo "ZIP=$zip" >> "$GITHUB_ENV"
+          awk -v v="$VERSION" '
+            /^## / { if (on) exit; if ($2 == v) { on = 1; next } }
+            on' CHANGELOG.md > notes.md
+          [ -s notes.md ] || { echo "::error::no '## $VERSION' section in CHANGELOG.md"; exit 1; }
+
+      - name: Create or update the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            gh release edit "$TAG" --title "$TAG" --notes-file notes.md
+            gh release upload "$TAG" "$ZIP" --clobber
+          else
+            gh release create "$TAG" "$ZIP" --title "$TAG" --notes-file notes.md --verify-tag
+          fi
