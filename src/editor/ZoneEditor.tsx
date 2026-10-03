@@ -16,10 +16,15 @@ import {
 import { createPortal } from "react-dom";
 import {
   DensityScatterChart,
+  DensityShapeGlyph,
   classifyZones,
   countClasses,
+  dealShapes,
+  type DensityPointShape,
+  type DensityShapeBy,
   type DensityView,
 } from "@elabs-ai/components-charts";
+import { ALL_SHAPES, SHAPE_LABEL, readShapes, type ShapeMapEntry } from "../shapes";
 import { quadrantId, toDensityZones } from "../zones";
 import type { QhdsTheme } from "../theme";
 import { localeMarks, makeAxisFormatter, parseQlikColor } from "../format";
@@ -54,6 +59,13 @@ export interface ZoneEditorProps {
   yTitle?: string;
   totalPoints: number;
   onClose: () => void;
+  /** Which view opens first: the zones or the Shapes tab. */
+  initialTab?: "zones" | "shapes";
+  /** The 2nd dimension's distinct values (first-seen order) and title — the Shapes tab's rows. */
+  catLabels?: readonly string[];
+  catTitle?: string;
+  /** What the live chart currently draws with, so the preview starts identical. */
+  shapeBy?: DensityShapeBy;
 }
 
 const KIND_LABEL: Record<ZoneKind, string> = {
@@ -300,15 +312,28 @@ export function ZoneEditor({
   yTitle,
   totalPoints,
   onClose,
+  initialTab = "zones",
+  catLabels = [],
+  catTitle = "",
 }: ZoneEditorProps) {
   const [loaded, setLoaded] = useState(false);
+  // "zones" shows the Properties / Data model views (by `source`); "shapes" the Shapes tab.
+  const [tab, setTab] = useState<"zones" | "shapes">(initialTab);
+  // Draft of props.shapes: on/off + the explicit value → glyph assignments.
+  const [shapesDraft, setShapesDraft] = useState<{ enabled: boolean; map: Record<string, DensityPointShape> }>({
+    enabled: false,
+    map: {},
+  });
+  const shapesInitial = useRef<string>("");
+  const shapesJson = JSON.stringify(shapesDraft);
+  const shapesDirty = loaded && shapesJson !== shapesInitial.current;
   const [drafts, setDrafts] = useState<DraftZone[]>([]);
   const [past, setPast] = useState<DraftZone[][]>([]);
   const [future, setFuture] = useState<DraftZone[][]>([]);
   const [selected, setSelected] = useState<string | null>(null);
   const [tool, setTool] = useState<Tool>("select");
   // The preview fills its pane (no dead space under the plot).
-  const [previewH, setPreviewH] = useState(470);
+  const [previewH, setPreviewH] = useState(300);
   const previewObs = useRef<ResizeObserver | null>(null);
   const previewRef = useCallback((el: HTMLDivElement | null) => {
     previewObs.current?.disconnect();
@@ -366,6 +391,10 @@ export function ZoneEditor({
         const d = toDrafts(props?.props?.zones, layout?.props?.zones);
         setDrafts(d);
         setSelected(d[0]?.key ?? null);
+        const sh = readShapes(props?.props?.shapes ?? layout?.props?.shapes);
+        const draft = { enabled: sh.enabled, map: Object.fromEntries(sh.map.map((e) => [e.value, e.shape])) };
+        shapesInitial.current = JSON.stringify(draft);
+        setShapesDraft(draft);
       } catch (e) {
         setError(String((e as any)?.message ?? e));
       } finally {
@@ -701,6 +730,7 @@ export function ZoneEditor({
   // ---------- apply ----------
   const dirty =
     past.length > 0 ||
+    shapesDirty ||
     source !== (layout?.props?.zoneSource === "data" ? "data" : "props");
   const apply = async () => {
     setSaving(true);
@@ -718,6 +748,14 @@ export function ZoneEditor({
         qPath: "/props/zoneSource",
         qValue: JSON.stringify(source),
       });
+      if (shapesDirty) {
+        const map: ShapeMapEntry[] = Object.entries(shapesDraft.map).map(([value, shape]) => ({ value, shape }));
+        patches.push({
+          qOp: "replace",
+          qPath: "/props/shapes",
+          qValue: JSON.stringify({ enabled: shapesDraft.enabled, map }),
+        });
+      }
       await model.applyPatches(patches, false);
       onClose();
     } catch (e) {
@@ -1443,6 +1481,158 @@ export function ZoneEditor({
     </div>
   );
 
+  // ---------- Shapes tab ----------
+  const previewShapeBy: DensityShapeBy | undefined =
+    shapesDraft.enabled && catLabels.length ? { kind: "category", key: "category", shapes: shapesDraft.map } : undefined;
+  const shapeRows = dealShapes(catLabels, { shapes: shapesDraft.map });
+  const setShape = (value: string, shape: DensityPointShape | null) =>
+    setShapesDraft((d) => {
+      const map = { ...d.map };
+      if (shape) map[value] = shape;
+      else delete map[value];
+      return { ...d, map };
+    });
+  const shapesView = (
+    <div className="qhds-ze-shapes" data-testid="ze-shapes" key="shapes">
+      <section className="qhds-ze-shapes-list">
+        <label className="qhds-ze-switch">
+          <input
+            checked={shapesDraft.enabled}
+            data-testid="ze-shapes-enabled"
+            onChange={(e) => setShapesDraft((d) => ({ ...d, enabled: e.target.checked }))}
+            type="checkbox"
+          />
+          <span>
+            <strong>Shape points by {catTitle || "the 2nd dimension"}</strong>
+            <span className="qhds-ze-muted">
+              Every value gets its own glyph instead of a dot. Colour stays as it is (zone, dimension or measure).
+            </span>
+          </span>
+        </label>
+        {!catLabels.length ? (
+          <div className="qhds-ze-note">
+            Add a 2nd dimension (<strong>Category</strong>) in the Data section to shape points by it.
+          </div>
+        ) : (
+          <>
+            <div className="qhds-ze-shapes-head">
+              <span className="qhds-ze-h">
+                {catLabels.length} {catLabels.length === 1 ? "value" : "values"}
+              </span>
+              <button
+                className="qhds-ze-link"
+                disabled={!Object.keys(shapesDraft.map).length}
+                onClick={() => setShapesDraft((d) => ({ ...d, map: {} }))}
+                type="button"
+              >
+                Reset all to automatic
+              </button>
+            </div>
+            <ul aria-label="Shape per value" className="qhds-ze-shaperows">
+              {shapeRows.map((row) => {
+                const explicit = shapesDraft.map[row.label] !== undefined;
+                return (
+                  <li className="qhds-ze-shaperow" data-testid={`ze-shape-${row.label}`} key={row.label}>
+                    <span className="qhds-ze-shape-cur" title={SHAPE_LABEL[row.shape]}>
+                      <DensityShapeGlyph shape={row.shape} size={14} />
+                    </span>
+                    <span className="qhds-ze-item-text">
+                      <span className="qhds-ze-item-name">{row.label}</span>
+                      <span className="qhds-ze-item-sub">
+                        {SHAPE_LABEL[row.shape]}
+                        {explicit ? "" : " · automatic"}
+                      </span>
+                    </span>
+                    <div
+                      aria-label={`Shape for ${row.label}`}
+                      className="qhds-ze-seg qhds-ze-iconseg qhds-ze-shapepick"
+                      role="radiogroup"
+                    >
+                      {ALL_SHAPES.map((sh) => (
+                        <button
+                          aria-checked={explicit && row.shape === sh}
+                          aria-label={SHAPE_LABEL[sh]}
+                          className="qhds-ze-tip"
+                          data-tip={SHAPE_LABEL[sh]}
+                          disabled={!shapesDraft.enabled}
+                          key={sh}
+                          onClick={() => setShape(row.label, sh)}
+                          role="radio"
+                          type="button"
+                        >
+                          <DensityShapeGlyph shape={sh} size={12} />
+                        </button>
+                      ))}
+                    </div>
+                    <button
+                      aria-label={`Automatic shape for ${row.label}`}
+                      className="qhds-ze-icon-btn qhds-ze-tip"
+                      data-tip="Back to automatic"
+                      disabled={!explicit || !shapesDraft.enabled}
+                      onClick={() => setShape(row.label, null)}
+                      type="button"
+                    >
+                      <Icon d={ICONS.close} size={14} />
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+            <p className="qhds-ze-muted">
+              Values without an assignment take the next free glyph, in the order they appear in the data.
+              Glyphs read best from a point size of about 2 or more (Appearance › Presentation).
+            </p>
+          </>
+        )}
+      </section>
+      <section aria-label="Shape preview" className="qhds-ze-center">
+        <div className="qhds-ze-preview" ref={previewRef}>
+          {loaded ? (
+            <DensityScatterChart
+              accessibleLabel="Shape preview"
+              colorBy={zones.length ? { kind: "zone" } : { kind: "density" }}
+              data={data}
+              domain={domain}
+              formatX={fmtX}
+              formatY={fmtY}
+              hiddenKeys={hiddenIds}
+              legend={false}
+              onViewChange={setView}
+              outside={{
+                label: String(layout?.props?.outsideLabel ?? "Outside"),
+                color: theme.resolveColor(layout?.props?.outsideColor, 7),
+              }}
+              plotHeight={previewH}
+              pointRadius={Math.max(Number(layout?.props?.pointRadius) || 1.35, shapesDraft.enabled ? 2 : 0)}
+              selectionToolbar="none"
+              shapeBy={previewShapeBy}
+              view={view}
+              xLabel={xTitle}
+              yLabel={yTitle}
+              zoneTags={false}
+              zones={zones}
+              zoom
+            />
+          ) : (
+            <div className="qhds-ze-muted">Loading…</div>
+          )}
+        </div>
+        <div className="qhds-ze-hints">
+          <span>Preview: wheel zooms in to see the glyphs · drag pans</span>
+          <span className="qhds-ze-hints-tools">
+            <button
+              className="qhds-ze-btn"
+              onClick={() => setView(home ? { ...home } : undefined)}
+              type="button"
+            >
+              Fit
+            </button>
+          </span>
+        </div>
+      </section>
+    </div>
+  );
+
   const body = (
     <div
       className="qhds qhds-ze-root"
@@ -1479,33 +1669,48 @@ export function ZoneEditor({
       >
         <header className="qhds-ze-header">
           <div className="qhds-ze-titles">
-            <h2 id="qhds-ze-title">Zones</h2>
+            <h2 id="qhds-ze-title">{tab === "shapes" ? "Shapes" : "Zones"}</h2>
             <span className="qhds-ze-muted">
               {xTitle ?? "X"} × {yTitle ?? "Y"} · {totalPoints.toLocaleString()}{" "}
               points
             </span>
           </div>
           <div
-            aria-label="Zones from"
+            aria-label="Editor view"
             className="qhds-ze-seg"
             role="radiogroup"
           >
             <button
-              aria-checked={source === "props"}
-              onClick={() => setSource("props")}
+              aria-checked={tab === "zones" && source === "props"}
+              onClick={() => {
+                setTab("zones");
+                setSource("props");
+              }}
               role="radio"
               type="button"
             >
               Properties
             </button>
             <button
-              aria-checked={source === "data"}
+              aria-checked={tab === "zones" && source === "data"}
               data-testid="ze-src-data"
-              onClick={() => setSource("data")}
+              onClick={() => {
+                setTab("zones");
+                setSource("data");
+              }}
               role="radio"
               type="button"
             >
               Data model
+            </button>
+            <button
+              aria-checked={tab === "shapes"}
+              data-testid="ze-tab-shapes"
+              onClick={() => setTab("shapes")}
+              role="radio"
+              type="button"
+            >
+              Shapes
             </button>
           </div>
           <span className="qhds-ze-sep" />
@@ -1537,10 +1742,12 @@ export function ZoneEditor({
           </button>
         </header>
 
-        {source === "data" ? (
+        {tab === "shapes" ? (
+          shapesView
+        ) : source === "data" ? (
           dataView
         ) : (
-          <div className="qhds-ze-body">
+          <div className="qhds-ze-body" key="zones">
             {/* zone list */}
             <aside className="qhds-ze-listcol">
               <div className="qhds-ze-list-head">
@@ -1819,6 +2026,7 @@ export function ZoneEditor({
                       />
                     )}
                     selectionToolbar="none"
+                    shapeBy={previewShapeBy}
                     view={view}
                     formatX={fmtX}
                     formatY={fmtY}

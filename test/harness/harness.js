@@ -21,6 +21,9 @@ for (let i = 0; i < N; i++) {
   else py = gauss() * 140;
   X[i] = px * SCALE; Y[i] = py * SCALE; V[i] = 80 + 80 * Math.min(1, Math.max(0, (px + 2200) / 5700)) + gauss() * 8;
 }
+// `&cat=1`: a 2nd dimension (Airline, 6 values) — colour / shape by dimension tests.
+const CAT = params.get('cat') === '1';
+const CATS = ['Aurora Air', 'Blue Heron', 'Coastline', 'Meridian', 'Northwind', 'Zephyr'];
 const cell = (n, t) => ({ qNum: n, qText: t ?? String(n), qElemNumber: 0, qState: 'L' });
 const zones = JSON.parse(params.get('zones') || 'null') || [
   { label: 'Core', show: true, kind: 'envelope', mirror: true, extendStart: !!params.get('endless'), extendEnd: !!params.get('endless'), upper: [{ x: -2200, y: 42 }, { x: -650, y: 42 }, { x: -200, y: 15 }, { x: 3500, y: 15 }], color: { index: -1, color: '#4477aa' } },
@@ -36,8 +39,8 @@ const layout = {
   title: 'Harness', showTitles: false,
   qSelectionInfo: {},
   qHyperCube: {
-    qSize: { qcx: 4, qcy: N },
-    qDimensionInfo: [{ cId: 'd1', qFallbackTitle: 'PointID', qCardinal: N, qStateCounts: { qOption: N } }],
+    qSize: { qcx: CAT ? 5 : 4, qcy: N },
+    qDimensionInfo: [{ cId: 'd1', qFallbackTitle: 'PointID', qCardinal: N, qStateCounts: { qOption: N } }, ...(CAT ? [{ cId: 'd2', qFallbackTitle: 'Airline', qCardinal: CATS.length, qStateCounts: { qOption: CATS.length } }] : [])],
     qMeasureInfo: [{ cId: 'm1', qFallbackTitle: 'Along-track (m)', qMin: -2200 * SCALE, qMax: 3500 * SCALE, qNumFormat: { qType: 'U' } }, { cId: 'm2', qFallbackTitle: 'Cross-track (m)', qMin: -500 * SCALE, qMax: 500 * SCALE, qNumFormat: { qType: 'U' } }, { cId: 'm3', qFallbackTitle: 'Speed', qMin: 60, qMax: 190 }],
     qDataPages: [],
   },
@@ -55,12 +58,18 @@ const genericObject = {
   },
   applyPatches: rec('applyPatches'),
   getEffectiveProperties: () => ({ qInfo: layout.qInfo, props: layout.props }),
-  getHyperCubeData: (path, pages) => pages.map((p) => {
+  // `&delay=ms` slows every page down (loading-indicator tests).
+  getHyperCubeData: (path, pages) => (params.get('delay') ? new Promise((r) => setTimeout(r, Number(params.get('delay')))) : Promise.resolve()).then(() => pages.map((p) => {
     pagesServed++;
     const qMatrix = [];
-    for (let r = p.qTop; r < Math.min(N, p.qTop + p.qHeight); r++) qMatrix.push([{ ...cell(r, 'P' + r), qElemNumber: r }, cell(X[r]), cell(Y[r]), cell(V[r])]);
+    for (let r = p.qTop; r < Math.min(N, p.qTop + p.qHeight); r++) {
+      const row = [{ ...cell(r, 'P' + r), qElemNumber: r }];
+      if (CAT) row.push({ qText: CATS[r % CATS.length], qNum: NaN, qElemNumber: r % CATS.length, qState: 'O' });
+      row.push(cell(X[r]), cell(Y[r]), cell(V[r]));
+      qMatrix.push(row);
+    }
     return { qArea: p, qMatrix };
-  }),
+  })),
   beginSelections: rec('beginSelections'),
   endSelections: rec('endSelections'),
   resetMadeSelections: rec('resetMadeSelections'),

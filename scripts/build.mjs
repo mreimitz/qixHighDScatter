@@ -47,6 +47,14 @@ const aliasPlugin = {
       "@elabs-ai/components-ui/lib/cn": "ui/src/lib/cn.ts",
       "@elabs-ai/components-tokens": "tokens/src/index.ts",
     };
+    // One React: everything under the brand-ui source must resolve `react`,
+    // `react-dom` and the JSX runtime to THIS project's copy, or the chart's
+    // hooks run against a second React instance (hooks dispatcher = null).
+    const here = path.resolve("node_modules");
+    b.onResolve({ filter: /^(react|react-dom)(\/.*)?$/ }, (args) => {
+      if (args.resolveDir.startsWith(here)) return undefined;
+      return b.resolve(args.path, { kind: args.kind, resolveDir: here });
+    });
     b.onResolve({ filter: /^@elabs-ai\/components-(charts|ui|tokens)(\/.*)?$/ }, (args) => {
       const target = map[args.path];
       if (!target) return { errors: [{ text: `no source mapping for ${args.path}` }] };
@@ -65,7 +73,7 @@ const res = await build({
   minify: !dev,
   sourcemap: false,
   external: ["@nebula.js/stardust"],
-  loader: { ".css": "text" },
+  loader: { ".css": "text", ".svg": "text" },
   define: { "process.env.NODE_ENV": dev ? '"development"' : '"production"', __QHDS_VERSION__: JSON.stringify(VERSION) },
   write: false,
   legalComments: "none",

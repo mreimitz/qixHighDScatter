@@ -27,6 +27,9 @@ The native Qlik scatter plot switches to a binned view once there are too many p
 - **Native Qlik selections.** Range, lasso and legend-zone selections become real Qlik selections, with the usual ✓ / ✕ selection toolbar.
 - **Deep zoom.** The mouse wheel zooms at the cursor, dragging pans, and a minimap shows where you are.
 - **Reference lines.** Average, median and ±σ lines.
+- **Shapes by dimension.** Every value of the 2nd dimension can be drawn as its own glyph (circle, square, diamond, triangle up/down, plus, minus, cross, star, hexagon) — on top of the colour. Assign them in the editor's **Shapes** tab.
+- **Loading, your way.** A progress bar along the top edge and/or a "n / total" text while the points stream in, or a loading animation that holds the plot back until every point is in.
+- **Responsive.** The plot itself never disappears: a small object drops the statistics box, the zone tags, the legend, then the axis titles, then the tick labels — in that order. Legends never wrap: a bottom legend is one line that scrolls sideways, a side legend scrolls vertically.
 
 ## Screenshots
 
@@ -98,6 +101,18 @@ Zones live under **Add-ons › Zones**.
 
 Points that match no zone fall into **Outside**. You can rename it, recolour it, and choose whether it appears in the legend and can be selected.
 
+## Shapes
+
+**Appearance › Shapes › Shape by dimension** turns it on; **Edit shapes…** (or the **Shapes** tab of the zone editor) lists every value of the 2nd dimension with its glyph. Values you don't assign take the next free glyph in the order they appear in the data. Colour stays whatever it is (zone, dimension or measure); when the legend colours by the same dimension its swatches become the glyphs, otherwise a shape key appears under the plot. Glyphs read best from a point size of about 2.
+
+## Loading
+
+**Appearance › Loading**:
+
+- **While the points load:** _Draw as they arrive_ (the plot fills page by page) or _Loading animation_ (a little robot paints a scatter plot in step with the progress, and every point appears at once when all are in — the fastest way to load large sets).
+- **Fun mode** (on by default) uses the robot animation; off shows a plain loading screen (spinner, bar, text).
+- **Progress indicator:** bar and text, bar only, text only, or none.
+
 ## Interaction
 
 | Action                                   | Result                                                                  |
@@ -134,6 +149,14 @@ node test/wheel-longtask.mjs            # wheel-zoom frame times
 ```
 
 Setting `BRAND_UI_SRC=<elabs-components>/packages` builds against the brand-ui source instead of the published packages.
+
+**Until brand-ui ships `DensityScatterChart.shapeBy` on npm (it lives on the `feat/density-scatter-shape-by` branch of `mreimitz/elabs-components`), build against that source:**
+
+```bash
+git clone -b feat/density-scatter-shape-by https://github.com/mreimitz/elabs-components ../elabs-components
+(cd ../elabs-components && pnpm install)
+BRAND_UI_SRC=../elabs-components/packages npm run build
+```
 
 ### Build notes
 

@@ -3,7 +3,7 @@ import { spawn } from "node:child_process";
 import { existsSync, readdirSync } from "node:fs";
 const dir = "/opt/pw-browsers";
 const exe = readdirSync(dir).filter((d) => d.startsWith("chromium")).map((d) => [`${dir}/${d}/chrome-linux/chrome`, `${dir}/${d}/chrome-linux64/chrome`]).flat().find(existsSync);
-const server = spawn("python3", ["-m", "http.server", "8767", "--bind", "127.0.0.1"], { stdio: "ignore", cwd: "/home/claude/qhds" });
+const server = spawn("python3", ["-m", "http.server", "8767", "--bind", "127.0.0.1"], { stdio: "ignore", cwd: process.cwd() });
 await new Promise((r) => setTimeout(r, 800));
 for (const args of [["--use-angle=swiftshader","--enable-unsafe-swiftshader"], ["--disable-3d-apis","--disable-webgl"]]) {
 const browser = await chromium.launch({ executablePath: exe, args });

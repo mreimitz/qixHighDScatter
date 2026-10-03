@@ -9,7 +9,19 @@ import {
   resolveSelection,
   toggleZoneConstraint,
   type DensityStatLine,
+  DensityShapeGlyph,
 } from "@elabs-ai/components-charts";
+import { shapeEntries, toShapeBy } from "./shapes";
+import robotLoaderSvg from "./assets/robot-scatter-loader.svg";
+
+/**
+ * The loading animation (render mode "Loading animation"): a little robot
+ * paints a scatter plot. With a known total the 20 s timeline is SCRUBBED by
+ * the load progress (`--progress` 0–1), so the picture finishes exactly when
+ * the points do; without one it free-runs.
+ */
+const ROBOT_FREE = robotLoaderSvg;
+const ROBOT_CONTROLLED = robotLoaderSvg.replace("<svg ", '<svg class="qhds-rl-controlled" ');
 import { fetchAllRows, type QhdsColumns } from "./data";
 import { toDensityZones } from "./zones";
 import { watchZoneTable } from "./data-zones";
@@ -38,6 +50,15 @@ export interface AppProps {
 }
 
 const EMPTY_KEYS: ReadonlySet<string> = new Set();
+/** How often streamed points are handed to the chart while loading (ms). */
+const PUBLISH_MS = 400;
+/** The plot keeps at least this much room; everything else hides first. */
+const MIN_PLOT_W = 200;
+const MIN_PLOT_H = 130;
+/** Height of the shape key strip (shape by dimension while colouring by zone). */
+const SHAPE_KEY_H = 26;
+/** Legend column of the chart's container legend (w-40) + its gap. */
+const SIDE_LEGEND_W = 160 + 16;
 /** "No selection" as a VALUE: `undefined` would flip the chart to uncontrolled,
  * and it would keep showing its last internal ranges after a clear/cancel. */
 const NO_SELECTION: DensityScatterSelection = Object.freeze({});
@@ -91,11 +112,21 @@ export function App({
   const inSelections = Boolean(layout?.qSelectionInfo?.qInSelections);
 
   // ---------- data ----------
+  // `cols` is what the chart draws; `progress` is what the loading indicator
+  // shows. They are published separately: pages land every few ms, but the
+  // chart (re-binning, re-uploading, re-classifying every point) is only fed
+  // every PUBLISH_MS — otherwise 300+ pages × O(n) work made loading quadratic.
   const [cols, setCols] = useState<QhdsColumns>(EMPTY);
   const [version, setVersion] = useState(0);
+  // Nothing is "loading" until a fetch actually starts; the total is known from
+  // the hypercube before the first page, so the bar is determinate from the start.
+  const [progress, setProgress] = useState<{ n: number; total: number; done: boolean }>({ n: 0, total: 0, done: true });
   const [error, setError] = useState<string | null>(null);
   const key = dataKey(layout);
   const lastKey = useRef<string>("");
+  // "live": points appear as they arrive. "animated": a loading animation with
+  // the progress bar, then every point at once (also the cheapest way to load).
+  const renderMode: "live" | "animated" = props.renderMode === "animated" ? "animated" : "live";
   useEffect(() => {
     if (!hc || hc.qError || hc.qCalcCondMsg) return;
     if (hc.qDimensionInfo.length < 1 || hc.qMeasureInfo.length < 2) return;
@@ -104,23 +135,51 @@ export function App({
     if (key === lastKey.current) return;
     lastKey.current = key;
     setError(null);
+    const maxPts = Math.max(1000, Number(props.maxPoints) || 1_000_000);
+    const expected = Math.min(Number(hc.qSize?.qcy) || 0, maxPts);
+    setProgress({ n: 0, total: expected, done: expected === 0 });
+    let latest: QhdsColumns | null = null;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    let lastPublish = 0;
+    let published = false;
+    const publish = () => {
+      timer = null;
+      if (!latest) return;
+      lastPublish = performance.now();
+      published = true;
+      setCols(latest);
+      setVersion((v) => v + 1);
+    };
     const handle = fetchAllRows(
       model,
       hc,
-      Math.max(1000, Number(props.maxPoints) || 1_000_000),
+      maxPts,
       legacyColor3(layout),
       (c) => {
-        setCols(c);
-        setVersion((v) => v + 1);
+        latest = c;
+        setProgress((p) => (p.n === c.n && p.total === c.total && p.done === c.done ? p : { n: c.n, total: c.total, done: c.done }));
+        if (c.done) {
+          if (timer) clearTimeout(timer);
+          publish();
+          return;
+        }
+        if (renderMode === "animated") return;
+        // First page right away (something to look at), then at most every PUBLISH_MS.
+        if (!published) {
+          publish();
+          return;
+        }
+        if (!timer) timer = setTimeout(publish, Math.max(0, PUBLISH_MS - (performance.now() - lastPublish)));
       },
       (e) => setError(String((e as any)?.message ?? e)),
     );
     return () => {
+      if (timer) clearTimeout(timer);
       handle.cancel();
       // allow the same key to be fetched again if this effect was torn down mid-way
       lastKey.current = "";
     };
-  }, [key, inSelections]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [key, inSelections, renderMode]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // The chart treats `data` identity as "data changed": hand it a new wrapper per progress step.
   const data = useMemo(() => {
@@ -131,8 +190,10 @@ export function App({
       if (cols.values.size) out.values.size = cols.values.size.subarray(0, cols.n);
     }
     if (cols.categories) {
+      // Encoded (codes + labels), never one string per point: the chart reads
+      // the codes as they are instead of re-encoding 10⁶ labels per update.
       const c = cols.categories.category!;
-      out.categories = { category: Array.from(c.codes.subarray(0, cols.n), (k) => c.labels[k] ?? "") };
+      out.categories = { category: { codes: c.codes.subarray(0, cols.n), labels: c.labels.slice() } };
     }
     return out;
   }, [version]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -208,6 +269,11 @@ export function App({
     return { kind: "zone" };
   }, [props.colorBy, nMeas, nDims, zones.length]); // eslint-disable-line react-hooks/exhaustive-deps
   const hasSize = nMeas >= 3 && !legacyColor3(layout);
+  // Shapes by the 2nd dimension (Add-ons › Shapes / the editor's Shapes tab).
+  const shapesKey = JSON.stringify(props.shapes ?? null);
+  const shapeBy = useMemo(() => toShapeBy(props.shapes, nDims >= 2), [shapesKey, nDims]); // eslint-disable-line react-hooks/exhaustive-deps
+  const catLabels = cols.categories?.category.labels;
+  const catTitle: string = hc?.qDimensionInfo?.[1]?.qFallbackTitle ?? "";
   const sizeRange = useMemo<[number, number]>(() => {
     const r = Array.isArray(props.sizeRangeSlider) ? props.sizeRangeSlider : [1.2, 7];
     const lo = Math.max(0.5, Number(r[0]) || 1.2);
@@ -371,20 +437,70 @@ export function App({
   const onLegendItemClick = useCallback((key: string) => onLegendPick(new Set([key])), [onLegendPick]);
 
   // ---------- size ----------
-  // Responsive like the native charts: small objects drop the legend first,
-  // then axis titles, then tick labels.
+  // Responsive like the native charts. The plot itself never goes away: when
+  // the object shrinks, the chrome gives way in this order — statistics box,
+  // zone tags, legend, axis titles, tick labels. The legend is MEASURED (its
+  // height depends on how its entries wrap), and it stays only while the plot
+  // keeps MIN_PLOT_W × MIN_PLOT_H.
   const tiny = width < 160 || height < 120;
   const small = width < 280 || height < 200;
   const legendMode: string =
     props.legendShow === false || (props.legendShow === undefined && props.legend === false) ? "off" : "auto";
-  const legendOn =
+  const legendWanted =
     legendMode !== "off" && !small && colorBy.kind !== "density" && colorBy.kind !== "value";
+  const legendEntries =
+    colorBy.kind === "category" ? (cols.categories?.category.labels.length ?? 0) : zones.length + 1;
+  const legendSizeKey = `${width}|${height}|${colorBy.kind}|${legendEntries}|${legendWanted}|${props.legendPosition || "auto"}`;
+  // Measured once per size/entries: whether the legend fits at all, the room it
+  // takes, and whether a side legend had to fall back to the bottom (taller
+  // than the object).
+  const [legendFit, setLegendFit] = useState<{ key: string; fits: boolean; w: number; h: number; toBottom: boolean }>({
+    key: legendSizeKey,
+    fits: true,
+    w: 0,
+    h: 0,
+    toBottom: false,
+  });
+  const fitCurrent = legendFit.key === legendSizeKey;
   const legendPos: "right" | "bottom" | "top" | "left" = (() => {
     const want = props.legendPosition || "auto";
-    if (want !== "auto") return (width < 420 && (want === "left" || want === "right") ? "bottom" : want) as any;
-    return width >= 420 && width > height * 0.9 ? "right" : "bottom";
+    // The chart's legend engine never puts a legend at the side under 480 px.
+    const sideOk = width >= 480 && width - SIDE_LEGEND_W >= MIN_PLOT_W && !(fitCurrent && legendFit.toBottom);
+    if (want !== "auto") return (!sideOk && (want === "left" || want === "right") ? "bottom" : want) as any;
+    return sideOk && width > height * 0.9 ? "right" : "bottom";
   })();
-  // Tools live in Qlik's own selection toolbar (the lasso action) — no chart toolbar.
+  const legendOn = legendWanted && (!fitCurrent || legendFit.fits);
+  const frameRef = useRef<HTMLDivElement | null>(null);
+  // Space the legend takes from the frame, from the last measurement (an
+  // estimate until it is in the DOM).
+  const legendW = legendOn ? (fitCurrent ? legendFit.w : legendPos === "left" || legendPos === "right" ? SIDE_LEGEND_W : 0) : 0;
+  const legendH = legendOn ? (fitCurrent ? legendFit.h : legendPos === "top" || legendPos === "bottom" ? 36 : 0) : 0;
+  // The shape key: a strip under the chart when the legend cannot carry the
+  // glyphs (colour is by zone / density / measure, shape by the dimension).
+  const shapeKeyOn = Boolean(
+    shapeBy && colorBy.kind !== "category" && !small && catLabels?.length && height - legendH - SHAPE_KEY_H >= MIN_PLOT_H,
+  );
+  const shapeKeyH = shapeKeyOn ? SHAPE_KEY_H : 0;
+  const plotHeight = Math.min(height - shapeKeyH, Math.max(MIN_PLOT_H, Math.floor(height - legendH - shapeKeyH)));
+  const plotWidth = Math.min(width, Math.max(MIN_PLOT_W, Math.floor(width - legendW)));
+  useLayoutEffect(() => {
+    const root = frameRef.current?.querySelector('[data-slot="container-legend-root"]') as HTMLElement | null;
+    const box = root?.querySelector(':scope > div:not(.flex-1)') as HTMLElement | null;
+    if (!root || !box) {
+      if (!fitCurrent) setLegendFit({ key: legendSizeKey, fits: true, w: 0, h: 0, toBottom: false });
+      return;
+    }
+    const pos = root.getAttribute("data-container-legend-position");
+    const side = pos === "left" || pos === "right";
+    const gap = 16; // the engine's gap-4 between legend and plot
+    const w = side ? box.offsetWidth + gap : 0;
+    const h = side ? 0 : box.offsetHeight + gap;
+    // A side legend taller than the object moves to the bottom (measured again there).
+    const toBottom = (fitCurrent && legendFit.toBottom) || (side && box.offsetHeight > height);
+    const fits = width - w >= MIN_PLOT_W && height - h - shapeKeyH >= MIN_PLOT_H && h <= height * 0.5 && w <= width * 0.5;
+    if (!fitCurrent || legendFit.fits !== fits || legendFit.w !== w || legendFit.h !== h || legendFit.toBottom !== toBottom)
+      setLegendFit({ key: legendSizeKey, fits, w, h, toBottom });
+  });
   const axisOpt = (a: any, key: "x" | "y") => {
     const show: string = a?.show || "all";
     const labels = !tiny && (show === "all" || show === "labels");
@@ -394,22 +510,10 @@ export function App({
   };
   const xAx = axisOpt(props.xAxis, "x");
   const yAx = axisOpt(props.yAxis, "y");
-  // Fit: start from an estimate of the chart chrome (legend, axis title),
-  // then correct by what the rendered chart actually overflows / underfills.
-  // The selection toolbar floats over the plot, so it takes no height.
-  const estimate = (legendOn && (legendPos === "top" || legendPos === "bottom") ? 36 : 0) + 40;
-  const [fix, setFix] = useState(0);
-  const frameRef = useRef<HTMLDivElement | null>(null);
-  const plotHeight = Math.max(80, Math.floor(height - estimate - fix));
-  useLayoutEffect(() => {
-    // The chart's own box (legend included) — the selection wrapper stretches to the frame.
-    const chart = (frameRef.current?.querySelector('[data-slot="container-legend-root"]') ??
-      frameRef.current?.querySelector('[data-slot="density-scatter-chart"]')) as HTMLElement | null;
-    if (!chart) return;
-    const over = chart.getBoundingClientRect().height - height;
-    if (Math.abs(over) > 2 && plotHeight > 80) setFix((f) => Math.max(-estimate, f + Math.ceil(over)));
-  });
-  useEffect(() => setFix(0), [legendOn, legendPos, height, xAx.labels, xAx.title]);
+  // The statistics box and the zone tags float over the plot: only when the plot has room for them.
+  const roomy = plotWidth >= 360 && plotHeight >= 240;
+  // The chart's bottom gutter (tick labels + axis title), as it computes it.
+  const xGutter = Math.max(8, (xAx.labels ? 20 : 0) + (xAx.title ? 20 : 4));
 
   const status = !hc
     ? null
@@ -432,7 +536,7 @@ export function App({
   const homeSpans = domain ? { x: domain.x1 - domain.x0, y: domain.y1 - domain.y0 } : { x: 1, y: 1 };
   const span = spans ?? homeSpans;
   // ---------- statistics box ----------
-  const statsOn = props.showStats === true && !small;
+  const statsOn = props.showStats === true && roomy;
   const viewRef = useRef<{ x0: number; x1: number; y0: number; y1: number } | null>(null);
   const [viewTick, setViewTick] = useState(0);
   const viewTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -498,10 +602,14 @@ export function App({
 
   // ---------- zone editor ----------
   const [editorOpen, setEditorOpen] = useState(false);
+  const [editorTab, setEditorTab] = useState<"zones" | "shapes">("zones");
   const qId: string | undefined = layout?.qInfo?.qId;
   useEffect(() => {
     if (!qId) return;
-    return registerEditor(qId, () => setEditorOpen(true));
+    return registerEditor(qId, (tab) => {
+      setEditorTab(tab === "shapes" ? "shapes" : "zones");
+      setEditorOpen(true);
+    });
   }, [qId]);
   // Leaving edit mode closes the editor without saving.
   useEffect(() => {
@@ -520,8 +628,9 @@ export function App({
           axis: l?.axis === "x" ? "x" : "y",
           by: l?.by === "all" ? "all" : "class",
           span: l?.span === "plot" ? "plot" : "class",
-          label:
-            l?.labelMode === "none" || l?.labelMode === "value"
+          label: !roomy
+            ? "none"
+            : l?.labelMode === "none" || l?.labelMode === "value"
               ? l.labelMode
               : l?.labelMode === "custom" && custom
                 ? custom
@@ -530,7 +639,7 @@ export function App({
         };
       }),
     // Keyed by content: the layout object is new on every engine push.
-    [JSON.stringify(props.statLines ?? [])], // eslint-disable-line react-hooks/exhaustive-deps
+    [JSON.stringify(props.statLines ?? []), roomy], // eslint-disable-line react-hooks/exhaustive-deps
   );
 
   if (width < 40 || height < 40) return null;
@@ -553,16 +662,64 @@ export function App({
         "Zone";
   const xTitle = hc.qMeasureInfo[0]?.qFallbackTitle;
   const yTitle = hc.qMeasureInfo[1]?.qFallbackTitle;
-  const loading = !cols.done;
+  const loading = !progress.done && !error;
+  const pct = progress.total > 0 ? Math.min(100, Math.round((100 * progress.n) / progress.total)) : null;
+  // Loading indicator: the bar along the top edge and/or the "n / total" text.
+  const indicator: string = typeof props.loadingIndicator === "string" ? props.loadingIndicator : "both";
+  // "animated": the points stay back until every page is in; a loading card
+  // (with the same bar / text choice) sits over the empty plot meanwhile.
+  const animatedLoading = loading && renderMode === "animated";
+  const wantBar = indicator === "bar" || indicator === "both";
+  const wantText = indicator === "text" || indicator === "both";
+  const showBar = loading && !animatedLoading && wantBar;
+  const showText = loading && !animatedLoading && wantText && !tiny;
 
+
+  // Render mode "Loading animation": while the points load, the animation is
+  // all there is — no plot, axes, legend or stats — as large as the object
+  // allows at the artwork's 520 × 310 ratio, with the bar / text underneath.
+  if (animatedLoading) {
+    const below = (wantBar ? 14 : 0) + (wantText ? 22 : 0);
+    const robotW = Math.max(60, Math.min(width - 24, ((height - below - 24) * 520) / 310));
+    // Fun mode (default on): the robot. Off: a plain loading screen — spinner, bar, text.
+    const fun = props.funMode !== false;
+    const barW = fun ? robotW : Math.min(320, Math.max(120, width - 48));
+    return (
+      <div className="qhds-frame" ref={frameRef} style={{ width, height }}>
+        <div className="qhds-loader qhds-loader-full" data-plain={fun ? undefined : ""} role="status" aria-live="polite">
+          {fun ? (
+            <div
+              aria-hidden="true"
+              className="qhds-loader-robot"
+              dangerouslySetInnerHTML={{ __html: pct === null ? ROBOT_FREE : ROBOT_CONTROLLED }}
+              style={{ width: robotW, ["--progress" as any]: pct === null ? 0 : pct / 100 }}
+            />
+          ) : (
+            <div aria-hidden="true" className="qhds-loader-spinner" />
+          )}
+          {wantBar && (
+            <div className="qhds-loader-bar" data-indeterminate={pct === null ? "" : undefined} style={{ width: barW }}>
+              <i style={pct === null ? undefined : { width: `${pct}%` }} />
+            </div>
+          )}
+          {wantText && !tiny && (
+            <span className="qhds-loader-text">
+              {progress.total > 0
+                ? `Loading ${fmt(progress.n)} of ${fmt(progress.total)} points${pct === null ? "" : ` · ${pct}%`}`
+                : "Loading points…"}
+            </span>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div
       className="qhds-frame"
       data-edit={editMode ? "" : undefined}
-      data-stats={statsOn && legendOn ? legendPos : undefined}
       ref={frameRef}
-      style={{ width, height, ["--qhds-x-gutter" as any]: `${Math.max(8, (xAx.labels ? 20 : 0) + (xAx.title ? 20 : 4))}px` }}
+      style={{ width, height, ["--qhds-h" as any]: `${height}px`, ["--qhds-x-gutter" as any]: `${xGutter}px` }}
     >
       <DensityScatterChart
         accessibleLabel={layout?.title || `${yTitle} by ${xTitle}`}
@@ -615,10 +772,32 @@ export function App({
         zoomControlsPlacement="bottom-end"
         plotHeight={plotHeight}
         domain={domain}
-        zoneTags={props.showZoneTags !== false && !small}
+        zoneTags={props.showZoneTags !== false && roomy}
+        shapeBy={shapeBy}
       />
-      {statsOn && (
-        <div className="qhds-stats" aria-live="polite" data-legend={legendOn ? legendPos : "none"}>
+      {shapeKeyOn && (
+        <div aria-label={`Shapes by ${catTitle}`} className="qhds-shapekey" role="group" style={{ height: SHAPE_KEY_H }}>
+          {catTitle ? <b>{catTitle}</b> : null}
+          {shapeEntries(catLabels!, props.shapes).map((e) => (
+            <span key={e.label}>
+              <DensityShapeGlyph shape={e.shape} size={10} />
+              {e.label}
+            </span>
+          ))}
+        </div>
+      )}
+      {statsOn && cols.n > 0 && (
+        <div
+          aria-live="polite"
+          className="qhds-stats"
+          // Bottom-left inside the plot: the one corner nothing else claims — zone
+          // tags hang at a zone's first vertex (upper left), reference-line tags
+          // prefer the right end, the minimap and zoom buttons take the bottom-right.
+          style={{
+            left: 64 + (legendOn && legendPos === "left" ? legendW : 0),
+            bottom: 6 + xGutter + (legendOn && legendPos === "bottom" ? legendH : 0) + shapeKeyH,
+          }}
+        >
           <span>On surface</span>
           <b>{fmt(cols.n)}</b>
           <span>Visible</span>
@@ -627,11 +806,24 @@ export function App({
           <b>{fmt(selectedCount)}</b>
         </div>
       )}
-      {(loading || (editMode && issues.length > 0)) && (
+      {showBar && (
+        <div
+          aria-label="Loading points"
+          aria-valuemax={100}
+          aria-valuemin={0}
+          aria-valuenow={pct ?? undefined}
+          className="qhds-progress"
+          data-indeterminate={pct === null ? "" : undefined}
+          role="progressbar"
+        >
+          <i style={pct === null ? undefined : { width: `${pct}%` }} />
+        </div>
+      )}
+      {(showText || (editMode && issues.length > 0)) && (
         <div className="qhds-status" aria-live="polite">
-          {loading && cols.total > 0 && (
+          {showText && (
             <span>
-              Loading {fmt(cols.n)} / {fmt(cols.total)} points
+              Loading {fmt(progress.n)} / {fmt(progress.total)} points{pct === null ? "" : ` · ${pct}%`}
             </span>
           )}
           {(editMode ? issues : []).map((i) => (
@@ -651,6 +843,10 @@ export function App({
           onClose={() => setEditorOpen(false)}
           theme={theme}
           totalPoints={cols.n}
+          initialTab={editorTab}
+          catLabels={catLabels ?? []}
+          catTitle={catTitle}
+          shapeBy={shapeBy}
           xTitle={xTitle}
           yTitle={yTitle}
         />
