@@ -29,7 +29,7 @@ The native Qlik scatter plot switches to a binned view once there are too many p
 - **Reference lines.** Average, median and ±σ lines.
 - **Shapes by dimension.** Every value of the 2nd dimension can be drawn as its own glyph (circle, square, diamond, triangle up/down, plus, minus, cross, star, hexagon) — on top of the colour. Assign them in the editor's **Shapes** tab.
 - **Loading, your way.** A progress bar along the top edge and/or a "n / total" text while the points stream in, or a loading animation that holds the plot back until every point is in.
-- **Responsive.** The plot itself never disappears: a small object drops the statistics box, the zone tags, the legend, then the axis titles, then the tick labels — in that order. Legends never wrap: a bottom legend is one line that scrolls sideways, a side legend scrolls vertically.
+- **Responsive.** The plot itself never disappears: a small object drops the statistics box, the no-GPU warning, the zone tags, the legend, then the axis titles, then the tick labels — in that order. The statistics box and the warning sign hang off the legend (below a side legend, after a bottom legend's row, in a strip under the plot without a legend), never over the plot. Legends never wrap: a bottom legend is one line that scrolls sideways, a side legend scrolls vertically.
 
 ## Screenshots
 
@@ -63,7 +63,7 @@ All zone settings are in **Add-ons › Zones**. That includes the source (Proper
 
 ## Install (no coding needed)
 
-1. Download `qixHighDScatter-v<version>.zip` from the [latest release](https://github.com/mreimitz/qixHighDScatter/releases/latest). Don't unzip it.
+1. Download `release/qixHighDScatter-v<version>.zip`. Don't unzip it.
 2. Upload the zip as an extension:
    - **Qlik Cloud:** Administration › Extensions › Add
    - **Client-managed:** QMC › Extensions › Import

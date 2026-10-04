@@ -5,6 +5,7 @@ const N = Number(params.get('n') || 300000);
 const DARK = params.get('dark') === '1';
 window.__calls = [];
 if (params.get('noremount')) window.__qhdsNoRemount = true;
+if (params.get('nogpu') === '1') window.__qhdsForceNoGpu = true;
 window.__dbg = [];
 if (DARK) document.getElementById('obj').style.background = '#1e1e1e';
 if (params.get('w')) document.getElementById('obj').style.width = params.get('w') + 'px';

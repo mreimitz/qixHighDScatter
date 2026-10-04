@@ -56,6 +56,7 @@ const EMPTY_KEYS: ReadonlySet<string> = new Set();
 let gpuProbe: boolean | null = null;
 function hasGpu(): boolean {
   if (gpuProbe !== null) return gpuProbe;
+  if ((window as any).__qhdsForceNoGpu) return false; // test hook (harness &nogpu=1)
   try {
     const c = document.createElement("canvas");
     const gl = c.getContext("webgl") || c.getContext("experimental-webgl");
@@ -85,6 +86,8 @@ const MIN_PLOT_W = 200;
 const MIN_PLOT_H = 130;
 /** Height of the shape key strip (shape by dimension while colouring by zone). */
 const SHAPE_KEY_H = 26;
+/** The strip under the plot that carries the warning / statistics when there is no legend. */
+const INFO_STRIP_H = 26;
 /** Legend column of the chart's container legend (w-40) + its gap. */
 const SIDE_LEGEND_W = 160 + 16;
 /** "No selection" as a VALUE: `undefined` would flip the chart to uncontrolled,
@@ -610,6 +613,7 @@ export function App({
   // keeps MIN_PLOT_W × MIN_PLOT_H.
   const tiny = width < 160 || height < 120;
   const small = width < 280 || height < 200;
+  const noGpu = typeof document !== "undefined" && !hasGpu();
   const legendMode: string =
     props.legendShow === false || (props.legendShow === undefined && props.legend === false) ? "off" : "auto";
   const legendWanted =
@@ -620,12 +624,14 @@ export function App({
   // Measured once per size/entries: whether the legend fits at all, the room it
   // takes, and whether a side legend had to fall back to the bottom (taller
   // than the object).
-  const [legendFit, setLegendFit] = useState<{ key: string; fits: boolean; w: number; h: number; toBottom: boolean }>({
+  type LegendBox = { left: number; top: number; w: number; h: number };
+  const [legendFit, setLegendFit] = useState<{ key: string; fits: boolean; w: number; h: number; toBottom: boolean; box: LegendBox | null }>({
     key: legendSizeKey,
     fits: true,
     w: 0,
     h: 0,
     toBottom: false,
+    box: null,
   });
   const fitCurrent = legendFit.key === legendSizeKey;
   const legendPos: "right" | "bottom" | "top" | "left" = (() => {
@@ -647,13 +653,43 @@ export function App({
     shapeBy && colorBy.kind !== "category" && !small && catLabels?.length && height - legendH - SHAPE_KEY_H >= MIN_PLOT_H,
   );
   const shapeKeyH = shapeKeyOn ? SHAPE_KEY_H : 0;
-  const plotHeight = Math.min(height - shapeKeyH, Math.max(MIN_PLOT_H, Math.floor(height - legendH - shapeKeyH)));
+  // The legend's tail: the no-GPU warning and the statistics box live with the
+  // legend, never over the plot — at the foot of a side legend's column (bottom
+  // edge), at the right end of a bottom legend's row, or (no legend) in a strip
+  // under the plot. They are the
+  // first things to go when the object shrinks: statistics, then the warning.
+  const statsWanted = props.showStats === true;
+  const warnWanted = noGpu && !tiny;
+  const legendBox = fitCurrent ? legendFit.box : null;
+  const sideLegend = legendOn && (legendPos === "left" || legendPos === "right");
+  const tail = ((): { mode: "side" | "row" | "strip" | "none"; warn: boolean; stats: boolean } => {
+    if (legendOn && !legendBox) return { mode: "none", warn: false, stats: false }; // not measured yet
+    if (legendOn && sideLegend) {
+      // Room between the end of the legend list and the bottom edge.
+      const avail = height - (legendBox!.top + legendBox!.h + 6) - shapeKeyH - 6;
+      const warn = warnWanted && avail >= 26;
+      const stats = statsWanted && avail >= (warn ? 30 : 0) + 58;
+      return { mode: "side", warn, stats };
+    }
+    if (legendOn) {
+      const warn = warnWanted && width >= 360;
+      const stats = statsWanted && width >= 640;
+      return { mode: "row", warn, stats };
+    }
+    const warn = warnWanted && !small;
+    const stats = statsWanted && width >= 360 && height - shapeKeyH - INFO_STRIP_H >= MIN_PLOT_H + 60;
+    return { mode: warn || stats ? "strip" : "none", warn, stats };
+  })();
+  const infoStripH = tail.mode === "strip" ? INFO_STRIP_H : 0;
+  // Space the tail reserves at the end of a bottom legend's row (the legend scrolls under it otherwise).
+  const legendTailW = tail.mode === "row" ? (tail.warn ? 30 : 0) + (tail.stats ? 300 : 0) + 8 : 0;
+  const plotHeight = Math.min(height - shapeKeyH - infoStripH, Math.max(MIN_PLOT_H, Math.floor(height - legendH - shapeKeyH - infoStripH)));
   const plotWidth = Math.min(width, Math.max(MIN_PLOT_W, Math.floor(width - legendW)));
   useLayoutEffect(() => {
     const root = frameRef.current?.querySelector('[data-slot="container-legend-root"]') as HTMLElement | null;
     const box = root?.querySelector(':scope > div:not(.flex-1)') as HTMLElement | null;
     if (!root || !box) {
-      if (!fitCurrent) setLegendFit({ key: legendSizeKey, fits: true, w: 0, h: 0, toBottom: false });
+      if (!fitCurrent || legendFit.box) setLegendFit({ key: legendSizeKey, fits: true, w: 0, h: 0, toBottom: false, box: null });
       return;
     }
     const pos = root.getAttribute("data-container-legend-position");
@@ -664,8 +700,18 @@ export function App({
     // A side legend taller than the object moves to the bottom (measured again there).
     const toBottom = (fitCurrent && legendFit.toBottom) || (side && box.offsetHeight > height);
     const fits = width - w >= MIN_PLOT_W && height - h - shapeKeyH >= MIN_PLOT_H && h <= height * 0.5 && w <= width * 0.5;
-    if (!fitCurrent || legendFit.fits !== fits || legendFit.w !== w || legendFit.h !== h || legendFit.toBottom !== toBottom)
-      setLegendFit({ key: legendSizeKey, fits, w, h, toBottom });
+    // Where the legend sits in the frame: the warning sign and the statistics
+    // box hang off it (below a side legend, after a bottom legend's row).
+    const fr = frameRef.current!.getBoundingClientRect();
+    // The column / row box gives left + width; the legend list itself (which may
+    // be shorter than the column) gives the bottom the tail hangs from.
+    const r = box.getBoundingClientRect();
+    const list = (box.querySelector('[data-slot="chart-legend"]') as HTMLElement | null)?.getBoundingClientRect() ?? r;
+    const rect: LegendBox = { left: Math.round(r.left - fr.left), top: Math.round(r.top - fr.top), w: Math.round(r.width), h: Math.round(list.bottom - r.top) };
+    const b = legendFit.box;
+    const sameBox = b && b.left === rect.left && b.top === rect.top && b.w === rect.w && b.h === rect.h;
+    if (!fitCurrent || legendFit.fits !== fits || legendFit.w !== w || legendFit.h !== h || legendFit.toBottom !== toBottom || !sameBox)
+      setLegendFit({ key: legendSizeKey, fits, w, h, toBottom, box: rect });
   });
   const axisOpt = (a: any, key: "x" | "y") => {
     const show: string = a?.show || "all";
@@ -676,7 +722,7 @@ export function App({
   };
   const xAx = axisOpt(props.xAxis, "x");
   const yAx = axisOpt(props.yAxis, "y");
-  // The statistics box and the zone tags float over the plot: only when the plot has room for them.
+  // The zone tags float over the plot: only when the plot has room for them.
   const roomy = plotWidth >= 360 && plotHeight >= 240;
   // The chart's bottom gutter (tick labels + axis title), as it computes it.
   const xGutter = Math.max(8, (xAx.labels ? 20 : 0) + (xAx.title ? 20 : 4));
@@ -702,7 +748,7 @@ export function App({
   const homeSpans = domain ? { x: domain.x1 - domain.x0, y: domain.y1 - domain.y0 } : { x: 1, y: 1 };
   const span = spans ?? homeSpans;
   // ---------- statistics box ----------
-  const statsOn = props.showStats === true && roomy;
+  const statsOn = tail.stats;
   const viewRef = useRef<{ x0: number; x1: number; y0: number; y1: number } | null>(null);
   const [viewTick, setViewTick] = useState(0);
   const viewTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -767,7 +813,6 @@ export function App({
   }, [statsOn, version, selection, inSelections, zones]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // No GPU: a small warning near the legend; its popover says where to turn acceleration on.
-  const noGpu = typeof document !== "undefined" && !hasGpu();
   const [gpuTip, setGpuTip] = useState<"off" | "hover" | "pinned">("off");
   const gpuHelp = useMemo(accelerationHelp, []);
   // The popover is fixed-positioned (it is taller than a small object), anchored to the icon.
@@ -924,7 +969,7 @@ export function App({
       className="qhds-frame"
       data-edit={editMode ? "" : undefined}
       ref={frameRef}
-      style={{ width, height, ["--qhds-h" as any]: `${height}px`, ["--qhds-x-gutter" as any]: `${xGutter}px` }}
+      style={{ width, height, ["--qhds-h" as any]: `${height}px`, ["--qhds-x-gutter" as any]: `${xGutter}px`, ["--qhds-legend-tail" as any]: `${legendTailW}px` }}
     >
       <DensityScatterChart
         accessibleLabel={layout?.title || `${yTitle} by ${xTitle}`}
@@ -948,7 +993,7 @@ export function App({
         onViewChange={onViewChange}
         pointRadius={Number(props.pointRadius) || 1.35}
         cellSize={Number(props.cellSize) || 5}
-        underlay={Number.isFinite(Number(props.underlay)) ? Number(props.underlay) : 4}
+        underlay={Number.isFinite(Number(props.underlay)) ? Number(props.underlay) : 0}
         zoom={!passive && props.zoom !== false}
         legend={
           legendOn
@@ -992,26 +1037,6 @@ export function App({
           ))}
         </div>
       )}
-      {statsOn && cols.n > 0 && (
-        <div
-          aria-live="polite"
-          className="qhds-stats"
-          // Bottom-left inside the plot: the one corner nothing else claims — zone
-          // tags hang at a zone's first vertex (upper left), reference-line tags
-          // prefer the right end, the minimap and zoom buttons take the bottom-right.
-          style={{
-            left: 64 + (legendOn && legendPos === "left" ? legendW : 0),
-            bottom: 6 + xGutter + (legendOn && legendPos === "bottom" ? legendH : 0) + shapeKeyH,
-          }}
-        >
-          <span>On surface</span>
-          <b>{fmt(cols.n)}</b>
-          <span>Visible</span>
-          <b>{fmt(visibleCount)}</b>
-          <span>Selected</span>
-          <b>{fmt(selectedCount)}</b>
-        </div>
-      )}
       {showBar && (
         <div
           aria-label="Loading points"
@@ -1037,66 +1062,80 @@ export function App({
           ))}
         </div>
       )}
-      {noGpu && !tiny && (
+      {tail.mode !== "none" && (tail.warn || (tail.stats && cols.n > 0)) && (
         <div
-          className="qhds-gpu"
-          // Below a side legend (bottom-right corner), at the right end of a bottom
-          // legend's row, else the top-right corner under Qlik's hover menu.
-          data-pos={legendOn ? legendPos : "none"}
+          className="qhds-tail"
+          data-mode={tail.mode}
           style={
-            legendOn && legendPos === "bottom"
-              ? { right: 8, bottom: Math.max(4, (legendH - 16 - 22) / 2) + shapeKeyH }
-              : legendOn && legendPos === "right"
-                ? { right: 8, bottom: 8 + shapeKeyH }
-                : { right: 8, top: 40 }
+            tail.mode === "side"
+              ? { left: legendBox!.left, bottom: 6 + shapeKeyH, width: Math.max(120, legendBox!.w) }
+              : tail.mode === "row"
+                ? { right: 8, top: legendBox!.top + Math.max(0, (legendBox!.h - 24) / 2) }
+                : { left: 0, right: 0, bottom: 0, height: INFO_STRIP_H }
           }
-          onMouseEnter={() => setGpuTip((t) => (t === "pinned" ? t : "hover"))}
-          onMouseLeave={() => setGpuTip((t) => (t === "pinned" ? t : "off"))}
         >
-          <button
-            aria-describedby="qhds-gpu-tip"
-            aria-expanded={gpuTip !== "off"}
-            aria-label="Graphics acceleration is off in this browser"
-            className="qhds-gpu-btn"
-            onBlur={() => setGpuTip("off")}
-            onClick={() => setGpuTip((t) => (t === "pinned" ? "off" : "pinned"))}
-            onFocus={() => setGpuTip((t) => (t === "pinned" ? t : "hover"))}
-            ref={gpuBtnRef}
-            type="button"
-          >
-            <svg aria-hidden="true" height="18" viewBox="0 0 18 18" width="18">
-              <path d="M9 2 1.5 15.5h15L9 2z" fill="#f28c28" />
-              <path d="M9 6.5v4.3M9 13.2v.2" stroke="#fff" strokeLinecap="round" strokeWidth="1.8" />
-            </svg>
-          </button>
-          {gpuTip !== "off" && (
-            <div className="qhds-gpu-tip" id="qhds-gpu-tip" role="tooltip" style={gpuTipStyle()}>
-              <b>Graphics acceleration is off</b>
-              <p>
-                {gpuHelp.browser} is not giving this page a GPU, so the points are drawn by the processor.
-                Loading looks the same, but panning and zooming are slower than they could be.
-              </p>
-              <p>
-                <strong>Turn it on:</strong> {gpuHelp.steps}
-              </p>
-              <p className="qhds-gpu-links">
-                <span>Settings page:</span>
-                <code>{gpuHelp.settings}</code>
-                <button className="qhds-gpu-copy" onClick={() => copy(gpuHelp.settings)} type="button">
-                  Copy
-                </button>
-              </p>
-              <p className="qhds-gpu-links">
-                <span>Check status:</span>
-                <code>{gpuHelp.status}</code>
-                <button className="qhds-gpu-copy" onClick={() => copy(gpuHelp.status)} type="button">
-                  Copy
-                </button>
-              </p>
-              <p className="qhds-gpu-muted">
-                Browsers do not let a page open these addresses — paste them into the address bar. On a managed
-                company computer the setting may be locked by IT policy.
-              </p>
+          {tail.warn && (
+            <div
+              className="qhds-gpu"
+              onMouseEnter={() => setGpuTip((t) => (t === "pinned" ? t : "hover"))}
+              onMouseLeave={() => setGpuTip((t) => (t === "pinned" ? t : "off"))}
+            >
+              <button
+                aria-describedby="qhds-gpu-tip"
+                aria-expanded={gpuTip !== "off"}
+                aria-label="Graphics acceleration is off in this browser"
+                className="qhds-gpu-btn"
+                onBlur={() => setGpuTip("off")}
+                onClick={() => setGpuTip((t) => (t === "pinned" ? "off" : "pinned"))}
+                onFocus={() => setGpuTip((t) => (t === "pinned" ? t : "hover"))}
+                ref={gpuBtnRef}
+                type="button"
+              >
+                <svg aria-hidden="true" height="18" viewBox="0 0 18 18" width="18">
+                  <path d="M9 2 1.5 15.5h15L9 2z" fill="#f28c28" />
+                  <path d="M9 6.5v4.3M9 13.2v.2" stroke="#fff" strokeLinecap="round" strokeWidth="1.8" />
+                </svg>
+              </button>
+              {gpuTip !== "off" && (
+                <div className="qhds-gpu-tip" id="qhds-gpu-tip" role="tooltip" style={gpuTipStyle()}>
+                  <b>Graphics acceleration is off</b>
+                  <p>
+                    {gpuHelp.browser} is not giving this page a GPU, so the points are drawn by the processor.
+                    Loading looks the same, but panning and zooming are slower than they could be.
+                  </p>
+                  <p>
+                    <strong>Turn it on:</strong> {gpuHelp.steps}
+                  </p>
+                  <p className="qhds-gpu-links">
+                    <span>Settings page:</span>
+                    <code>{gpuHelp.settings}</code>
+                    <button className="qhds-gpu-copy" onClick={() => copy(gpuHelp.settings)} type="button">
+                      Copy
+                    </button>
+                  </p>
+                  <p className="qhds-gpu-links">
+                    <span>Check status:</span>
+                    <code>{gpuHelp.status}</code>
+                    <button className="qhds-gpu-copy" onClick={() => copy(gpuHelp.status)} type="button">
+                      Copy
+                    </button>
+                  </p>
+                  <p className="qhds-gpu-muted">
+                    Browsers do not let a page open these addresses — paste them into the address bar. On a managed
+                    company computer the setting may be locked by IT policy.
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
+          {tail.stats && cols.n > 0 && (
+            <div aria-live="polite" className="qhds-stats">
+              <span>On surface</span>
+              <b>{fmt(cols.n)}</b>
+              <span>Visible</span>
+              <b>{fmt(visibleCount)}</b>
+              <span>Selected</span>
+              <b>{fmt(selectedCount)}</b>
             </div>
           )}
         </div>

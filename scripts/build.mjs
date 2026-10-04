@@ -99,7 +99,7 @@ writeFileSync(
       type: "visualization",
       version: VERSION,
       author: "Manuel Reimitz",
-      icon: "scatterChart",
+      icon: "scatter-chart", // one of Qlik's built-in qext icon names ("scatterChart" is not one → puzzle piece)
       preview: "",
       supernova: true,
     },

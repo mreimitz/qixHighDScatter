@@ -2,6 +2,13 @@
 
 Each `## <version>` section becomes the notes of the GitHub release of that version (see `.github/workflows/release.yml`). Install: upload `release/qixHighDScatter-v<version>.zip` under *Management Console › Extensions* (replace the existing one to keep every chart).
 
+## 0.7.1 — 2026-10-04
+
+- The statistics box is out of the plot: it hangs off the legend — below a side legend (under the no-GPU warning when that shows), at the right end of a bottom legend's row, or in a strip under the plot when there is no legend. Statistics are the first thing to go when the object shrinks, the warning sign second, the legend third.
+- The warning sign no longer moves when the object is resized (it is positioned from the legend's measured place, not from corner offsets).
+- *Density underlay* defaults to 0 (off) for new charts; existing charts keep their value.
+- The extension shows Qlik's scatter-chart icon in the assets panel (`"icon": "scatter-chart"`; the previous value was not a valid qext icon name, hence the puzzle piece).
+
 ## 0.7.0 — 2026-10-04
 
 Everything since 0.5.5 (0.6.0 was built the same day and never released on its own).

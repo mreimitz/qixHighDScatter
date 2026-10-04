@@ -213,10 +213,23 @@
 .qhds-ze-hints-tools { display: inline-flex; align-items: center; gap: 10px; }
 
 /* ---------- statistics box (Presentation › Show statistics) ---------- */
-.qhds-stats { position: absolute; left: 64px; bottom: 46px; z-index: 2; display: grid; grid-template-columns: auto auto; column-gap: 10px; row-gap: 1px;
-  padding: 4px 8px; font-size: 11px; line-height: 1.35; color: var(--muted-foreground); pointer-events: none;
+/* The legend's tail: warning sign + statistics, hung off the legend (never over the plot). */
+.qhds-tail { position: absolute; z-index: 6; display: flex; align-items: center; gap: 8px; box-sizing: border-box; pointer-events: none; }
+.qhds-tail > * { pointer-events: auto; }
+.qhds-tail[data-mode="side"] { flex-direction: column; align-items: stretch; gap: 4px; }
+.qhds-tail[data-mode="side"] .qhds-gpu { align-self: flex-start; }
+.qhds-tail[data-mode="row"] { justify-content: flex-end; }
+.qhds-tail[data-mode="strip"] { justify-content: flex-end; padding: 0 8px 0 16px; }
+.qhds-stats { display: grid; grid-template-columns: auto auto; column-gap: 10px; row-gap: 1px;
+  padding: 4px 8px; font-size: 11px; line-height: 1.35; color: var(--muted-foreground);
   background: color-mix(in oklab, var(--card) 92%, transparent); border: 1px solid var(--border); border-radius: 3px; }
 .qhds-stats > b { font-weight: 600; color: var(--foreground); text-align: right; font-variant-numeric: tabular-nums; }
+/* In a row (bottom legend / strip) the three counts sit on one line. */
+.qhds-tail[data-mode="row"] .qhds-stats, .qhds-tail[data-mode="strip"] .qhds-stats { display: flex; align-items: baseline; gap: 4px 6px; padding: 2px 8px; white-space: nowrap; }
+.qhds-tail[data-mode="row"] .qhds-stats > span:not(:first-child), .qhds-tail[data-mode="strip"] .qhds-stats > span:not(:first-child) { margin-left: 8px; }
+/* A bottom / top legend leaves the tail's room free at its right end. */
+.qhds [data-container-legend-position="top"] > div:not(.flex-1),
+.qhds [data-container-legend-position="bottom"] > div:not(.flex-1) { padding-right: var(--qhds-legend-tail, 0px); box-sizing: border-box; }
 
 /* ---------- loading: top progress bar, status text, animated loader ---------- */
 .qhds-progress { position: absolute; left: 0; top: 0; right: 0; height: 3px; z-index: 3; overflow: hidden; pointer-events: none;
@@ -280,7 +293,7 @@
 .qhds-ze-link:disabled { opacity: .4; cursor: default; }
 
 /* ---------- no-GPU warning ---------- */
-.qhds-gpu { position: absolute; z-index: 6; }
+.qhds-gpu { position: relative; z-index: 6; display: inline-flex; line-height: 0; }
 .qhds-gpu-btn { width: 24px; height: 24px; display: inline-flex; align-items: center; justify-content: center; border: 0; border-radius: 4px;
   background: transparent; cursor: pointer; padding: 0; }
 .qhds-gpu-btn:hover, .qhds-gpu-btn:focus-visible { background: color-mix(in oklab, #f28c28 16%, transparent); outline: none; }
