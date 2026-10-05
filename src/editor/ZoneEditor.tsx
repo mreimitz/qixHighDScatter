@@ -315,6 +315,7 @@ export function ZoneEditor({
   initialTab = "zones",
   catLabels = [],
   catTitle = "",
+  shapeBy,
 }: ZoneEditorProps) {
   const [loaded, setLoaded] = useState(false);
   // "zones" shows the Properties / Data model views (by `source`); "shapes" the Shapes tab.
