@@ -132,6 +132,105 @@ function CoverIcon({ outside }: { outside: boolean }) {
     </svg>
   );
 }
+/**
+ * The fixed-colour control of a shape row: a dot (light grey = not set) that
+ * opens a small popover with the theme palette, a custom colour and “no fixed
+ * colour”. One popover is open at a time (the parent owns `open`).
+ */
+function ColorDot({
+  color,
+  disabled,
+  label,
+  onChange,
+  onOpenChange,
+  open,
+  palette,
+}: {
+  color?: string;
+  disabled?: boolean;
+  label: string;
+  onChange: (color: string | null) => void;
+  onOpenChange: (open: boolean) => void;
+  open: boolean;
+  palette: readonly string[];
+}) {
+  const rootRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (!rootRef.current?.contains(e.target as Node)) onOpenChange(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.stopPropagation();
+        onOpenChange(false);
+      }
+    };
+    document.addEventListener("mousedown", onDown, true);
+    document.addEventListener("keydown", onKey, true);
+    return () => {
+      document.removeEventListener("mousedown", onDown, true);
+      document.removeEventListener("keydown", onKey, true);
+    };
+  }, [open, onOpenChange]);
+  const custom = /^#[0-9a-f]{6}$/i.test(color ?? "") ? color! : "#4477aa";
+  return (
+    <div className="qhds-ze-colordot-root" ref={rootRef}>
+      <button
+        aria-expanded={open}
+        aria-haspopup="dialog"
+        aria-label={color ? `Fixed colour for ${label}: ${color}` : `Fixed colour for ${label}: not set`}
+        className="qhds-ze-colordot qhds-ze-tip"
+        data-set={color ? "true" : "false"}
+        data-testid={`ze-color-${label}`}
+        data-tip={color ? `Fixed colour ${color}` : "Fixed colour (not set)"}
+        disabled={disabled}
+        onClick={() => onOpenChange(!open)}
+        style={color ? { background: color } : undefined}
+        type="button"
+      />
+      {open ? (
+        <div aria-label={`Fixed colour for ${label}`} className="qhds-ze-colorpop" role="dialog">
+          <div className="qhds-ze-swatches">
+            {palette.slice(0, 10).map((c, i) => (
+              <button
+                aria-label={`Color ${i + 1} ${c}`}
+                aria-pressed={(color ?? "").toLowerCase() === c.toLowerCase()}
+                className="qhds-ze-swatch"
+                key={c + i}
+                onClick={() => {
+                  onChange(c);
+                  onOpenChange(false);
+                }}
+                style={{ background: c }}
+                type="button"
+              />
+            ))}
+            <input
+              aria-label="Custom color"
+              className="qhds-ze-colorin"
+              onChange={(e) => onChange(e.target.value)}
+              type="color"
+              value={custom}
+            />
+          </div>
+          <button
+            className="qhds-ze-link"
+            disabled={!color}
+            onClick={() => {
+              onChange(null);
+              onOpenChange(false);
+            }}
+            type="button"
+          >
+            No fixed colour
+          </button>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 const ICONS = {
   undo: "M9 14 4 9l5-5M4 9h10.5a5.5 5.5 0 0 1 0 11H11",
   redo: "m15 14 5-5-5-5M20 9H9.5a5.5 5.5 0 0 0 0 11H13",
@@ -320,11 +419,15 @@ export function ZoneEditor({
   const [loaded, setLoaded] = useState(false);
   // "zones" shows the Properties / Data model views (by `source`); "shapes" the Shapes tab.
   const [tab, setTab] = useState<"zones" | "shapes">(initialTab);
-  // Draft of props.shapes: on/off + the explicit value → glyph assignments.
-  const [shapesDraft, setShapesDraft] = useState<{ enabled: boolean; map: Record<string, DensityPointShape> }>({
-    enabled: false,
-    map: {},
-  });
+  // Draft of props.shapes: on/off + the explicit value → glyph assignments +
+  // the fixed colours (hard-set ink per value, overriding every other colouring).
+  const [shapesDraft, setShapesDraft] = useState<{
+    enabled: boolean;
+    map: Record<string, DensityPointShape>;
+    colors: Record<string, string>;
+  }>({ enabled: false, map: {}, colors: {} });
+  // Which value's colour popover is open (one at a time).
+  const [colorPickFor, setColorPickFor] = useState<string | null>(null);
   const shapesInitial = useRef<string>("");
   const shapesJson = JSON.stringify(shapesDraft);
   const shapesDirty = loaded && shapesJson !== shapesInitial.current;
@@ -393,7 +496,11 @@ export function ZoneEditor({
         setDrafts(d);
         setSelected(d[0]?.key ?? null);
         const sh = readShapes(props?.props?.shapes ?? layout?.props?.shapes);
-        const draft = { enabled: sh.enabled, map: Object.fromEntries(sh.map.map((e) => [e.value, e.shape])) };
+        const draft = {
+          enabled: sh.enabled,
+          map: Object.fromEntries(sh.map.filter((e) => e.shape).map((e) => [e.value, e.shape!])),
+          colors: Object.fromEntries(sh.map.filter((e) => e.color).map((e) => [e.value, e.color!])),
+        };
         shapesInitial.current = JSON.stringify(draft);
         setShapesDraft(draft);
       } catch (e) {
@@ -750,7 +857,12 @@ export function ZoneEditor({
         qValue: JSON.stringify(source),
       });
       if (shapesDirty) {
-        const map: ShapeMapEntry[] = Object.entries(shapesDraft.map).map(([value, shape]) => ({ value, shape }));
+        const values = new Set([...Object.keys(shapesDraft.map), ...Object.keys(shapesDraft.colors)]);
+        const map: ShapeMapEntry[] = [...values].map((value) => ({
+          value,
+          ...(shapesDraft.map[value] ? { shape: shapesDraft.map[value] } : {}),
+          ...(shapesDraft.colors[value] ? { color: shapesDraft.colors[value] } : {}),
+        }));
         patches.push({
           qOp: "replace",
           qPath: "/props/shapes",
@@ -1484,8 +1596,17 @@ export function ZoneEditor({
 
   // ---------- Shapes tab ----------
   const previewShapeBy: DensityShapeBy | undefined =
-    shapesDraft.enabled && catLabels.length ? { kind: "category", key: shapeBy?.key ?? "category", shapes: shapesDraft.map } : undefined;
-  const shapeRows = dealShapes(catLabels, { shapes: shapesDraft.map });
+    shapesDraft.enabled && catLabels.length
+      ? { kind: "category", key: shapeBy?.key ?? "category", shapes: shapesDraft.map, colors: shapesDraft.colors }
+      : undefined;
+  const shapeRows = dealShapes(catLabels, { shapes: shapesDraft.map, colors: shapesDraft.colors });
+  const setColor = (value: string, color: string | null) =>
+    setShapesDraft((d) => {
+      const colors = { ...d.colors };
+      if (color) colors[value] = color;
+      else delete colors[value];
+      return { ...d, colors };
+    });
   const setShape = (value: string, shape: DensityPointShape | null) =>
     setShapesDraft((d) => {
       const map = { ...d.map };
@@ -1522,8 +1643,8 @@ export function ZoneEditor({
               </span>
               <button
                 className="qhds-ze-link"
-                disabled={!Object.keys(shapesDraft.map).length}
-                onClick={() => setShapesDraft((d) => ({ ...d, map: {} }))}
+                disabled={!Object.keys(shapesDraft.map).length && !Object.keys(shapesDraft.colors).length}
+                onClick={() => setShapesDraft((d) => ({ ...d, map: {}, colors: {} }))}
                 type="button"
               >
                 Reset all to automatic
@@ -1535,15 +1656,25 @@ export function ZoneEditor({
                 return (
                   <li className="qhds-ze-shaperow" data-testid={`ze-shape-${row.label}`} key={row.label}>
                     <span className="qhds-ze-shape-cur" title={SHAPE_LABEL[row.shape]}>
-                      <DensityShapeGlyph shape={row.shape} size={14} />
+                      <DensityShapeGlyph color={row.color} shape={row.shape} size={14} />
                     </span>
                     <span className="qhds-ze-item-text">
                       <span className="qhds-ze-item-name">{row.label}</span>
                       <span className="qhds-ze-item-sub">
                         {SHAPE_LABEL[row.shape]}
                         {explicit ? "" : " · automatic"}
+                        {row.color ? " · fixed colour" : ""}
                       </span>
                     </span>
+                    <ColorDot
+                      color={row.color}
+                      disabled={!shapesDraft.enabled}
+                      label={row.label}
+                      onChange={(c) => setColor(row.label, c)}
+                      onOpenChange={(open) => setColorPickFor(open ? row.label : null)}
+                      open={colorPickFor === row.label}
+                      palette={theme.palette}
+                    />
                     <div
                       aria-label={`Shape for ${row.label}`}
                       className="qhds-ze-seg qhds-ze-iconseg qhds-ze-shapepick"
@@ -1581,7 +1712,9 @@ export function ZoneEditor({
             </ul>
             <p className="qhds-ze-muted">
               Values without an assignment take the next free glyph, in the order they appear in the data.
-              Glyphs read best from a point size of about 2 or more (Appearance › Presentation).
+              Glyphs read best from a point size of about 2 or more (Appearance › Presentation). The colour
+              dot sets a fixed colour for a value — it overrides the zone, dimension or measure colouring for
+              those points; grey means not set.
             </p>
           </>
         )}

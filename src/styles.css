@@ -289,6 +289,13 @@
 .qhds-ze-shapepick > button { width: 28px; height: 28px; color: var(--foreground); }
 .qhds-ze-shapepick > button[aria-checked="true"] { color: var(--card); }
 .qhds-ze-shapepick > button:disabled { opacity: .4; cursor: default; }
+.qhds-ze-colordot-root { position: relative; flex: 0 0 auto; }
+.qhds-ze-colordot-root .qhds-ze-colordot { width: 18px; height: 18px; border-radius: 50%; padding: 0; cursor: pointer; border: 1px solid rgb(0 0 0 / .25); background: var(--muted); }
+.qhds-ze-colordot[data-set="false"] { background: #d4d4d4; border-style: dashed; }
+.qhds-ze-colordot[aria-expanded="true"] { box-shadow: 0 0 0 2px var(--card), 0 0 0 4px var(--foreground); }
+.qhds-ze-colordot:disabled { opacity: .4; cursor: default; }
+.qhds-ze-colorpop { position: absolute; left: 0; top: calc(100% + 6px); z-index: 3; width: 236px; padding: 10px; display: flex; flex-direction: column; gap: 8px; align-items: flex-start;
+  background: var(--card); border: 1px solid var(--border); border-radius: 6px; box-shadow: 0 8px 24px rgb(0 0 0 / .18); }
 .qhds-ze-shapes .qhds-ze-center { padding: 14px 20px 10px 20px; }
 .qhds-ze-link:disabled { opacity: .4; cursor: default; }
 

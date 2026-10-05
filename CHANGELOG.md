@@ -4,6 +4,7 @@ Each `## <version>` section becomes the notes of the GitHub release of that vers
 
 ## 0.7.1 — 2026-10-05
 
+- **Fixed colour per value.** The Shapes tab has a colour dot per value (light grey = not set) that opens a small picker (theme palette, custom colour, “No fixed colour”). A fixed colour overrides every other colouring — zone, dimension or measure — for the points of that value, which get their own legend entry (or recolour their category entry when colour and shape share the dimension); the shape key paints the glyph in it. Stored as `color` on the value's `props.shapes.map` entry, beside or instead of `shape`.
 - The shape assignments are edited only in the editor's **Shapes** tab (every value of the shape dimension, live preview); the property panel keeps the on/off switch and the *Edit shapes…* button — a list of hundreds of values has no place in the panel. Fixed *Edit shapes…* failing to open when colour and shape come from different dimensions.
 - **Third dimension: shape by.** A 3rd dimension drives the glyphs, so colour (2nd dimension) and shape can be two different fields; without a 3rd dimension the 2nd keeps serving both, as before. The data panel labels the slots *Dimension 1/2/3* (point identity, colour, shape — see the README). Packed transport, the paged fallback, the selection cache and the editor's Shapes tab all carry the extra column.
 

@@ -104,7 +104,7 @@ Points that match no zone fall into **Outside**. You can rename it, recolour it,
 
 ## Shapes
 
-**Appearance › Shapes › Shape by dimension** turns it on; **Edit shapes…** (or the **Shapes** tab of the zone editor) lists every value of the shape dimension with its glyph. The shape dimension is the 3rd dimension when there is one — so colour (2nd dimension) and shape can be two different fields — otherwise the 2nd dimension serves both. Values you don't assign take the next free glyph in the order they appear in the data. Colour stays whatever it is (zone, dimension or measure); when the legend colours by the same dimension its swatches become the glyphs, otherwise a shape key appears under the plot. Glyphs read best from a point size of about 2.
+**Appearance › Shapes › Shape by dimension** turns it on; **Edit shapes…** (or the **Shapes** tab of the zone editor) lists every value of the shape dimension with its glyph. The shape dimension is the 3rd dimension when there is one — so colour (2nd dimension) and shape can be two different fields — otherwise the 2nd dimension serves both. Values you don't assign take the next free glyph in the order they appear in the data. Colour stays whatever it is (zone, dimension or measure) unless you hard-set one: the colour dot on a value's row (light grey = not set) opens a small picker — theme palette, custom colour, or back to none — and a fixed colour overrides every other colouring for the points of that value (it gets its own legend entry; when the legend colours by the same dimension, that entry simply takes the colour). When the legend colours by the same dimension its swatches become the glyphs, otherwise a shape key appears under the plot. Glyphs read best from a point size of about 2.
 
 ## Loading
 

@@ -1046,7 +1046,7 @@ export function App({
           {catTitle ? <b>{catTitle}</b> : null}
           {shapeEntries(catLabels!, props.shapes).map((e) => (
             <span key={e.label}>
-              <DensityShapeGlyph shape={e.shape} size={10} />
+              <DensityShapeGlyph color={e.color} shape={e.shape} size={10} />
               {e.label}
             </span>
           ))}
