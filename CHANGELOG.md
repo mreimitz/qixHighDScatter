@@ -4,6 +4,8 @@ Each `## <version>` section becomes the notes of the GitHub release of that vers
 
 ## 0.7.1 — 2026-10-05
 
+- **Third dimension: shape by.** A 3rd dimension drives the glyphs, so colour (2nd dimension) and shape can be two different fields; without a 3rd dimension the 2nd keeps serving both, as before. Packed transport, the paged fallback, the selection cache and the editor's Shapes tab all carry the extra column.
+
 - **Selections on bare-field measures work.** A measure typed as a plain field (`[XCG]`, `WEIGHT`) cannot be range-selected: the engine answers `RangeSelectHyperCubeValues` with `false`, nebula then clears the selection, and the chart reloaded without any selection applied (range tool, axis ranges and lasso all go through measure ranges). The chart now wraps such measures in `Only(…)` — exact for one row per point — as a session-only soft patch: the saved object is untouched, the axis title stays the field's, and selections work.
 
 - The statistics box is out of the plot: it hangs off the legend — below a side legend (under the no-GPU warning when that shows), at the right end of a bottom legend's row, or in a strip under the plot when there is no legend. Statistics are the first thing to go when the object shrinks, the warning sign second, the legend third.

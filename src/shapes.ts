@@ -59,13 +59,16 @@ export function readShapes(raw: unknown): { enabled: boolean; map: ShapeMapEntry
   return { enabled: p.enabled === true, map };
 }
 
-/** `shapeBy` for the chart (the 2nd dimension is the `category` column), or nothing. */
-export function toShapeBy(raw: unknown, hasCategory: boolean): DensityShapeBy | undefined {
+/**
+ * `shapeBy` for the chart, or nothing. The glyph column is the 3rd dimension
+ * (`shape`) when there is one, else the 2nd (`category`, shared with colour).
+ */
+export function toShapeBy(raw: unknown, key: "category" | "shape" | null): DensityShapeBy | undefined {
   const { enabled, map } = readShapes(raw);
-  if (!enabled || !hasCategory) return undefined;
+  if (!enabled || !key) return undefined;
   const shapes: Record<string, DensityPointShape> = {};
   for (const e of map) shapes[e.value] = e.shape;
-  return { kind: "category", key: "category", shapes };
+  return { kind: "category", key, shapes };
 }
 
 /** Every value with the glyph it will get — for the shape key and the editor table. */

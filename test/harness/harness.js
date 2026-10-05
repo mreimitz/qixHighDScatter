@@ -24,6 +24,9 @@ for (let i = 0; i < N; i++) {
 }
 // `&cat=1`: a 2nd dimension (Airline, 6 values) — colour / shape by dimension tests.
 const CAT = params.get('cat') === '1';
+// `&shape=1` (with cat=1): a 3rd dimension (AircraftType, 4 values) — shape by a different dimension than colour.
+const SHP = CAT && params.get('shape') === '1';
+const SHAPES = ['A320', 'A321', 'A350', 'B38M'];
 const CATS = ['Aurora Air', 'Blue Heron', 'Coastline', 'Meridian', 'Northwind', 'Zephyr'];
 const cell = (n, t) => ({ qNum: n, qText: t ?? String(n), qElemNumber: 0, qState: 'L' });
 const zones = JSON.parse(params.get('zones') || 'null') || [
@@ -40,8 +43,8 @@ const layout = {
   title: 'Harness', showTitles: false,
   qSelectionInfo: {},
   qHyperCube: {
-    qSize: { qcx: CAT ? 5 : 4, qcy: N },
-    qDimensionInfo: [{ cId: 'd1', qFallbackTitle: 'PointID', qCardinal: N, qStateCounts: { qOption: N } }, ...(CAT ? [{ cId: 'd2', qFallbackTitle: 'Airline', qCardinal: CATS.length, qStateCounts: { qOption: CATS.length } }] : [])],
+    qSize: { qcx: (CAT ? 5 : 4) + (SHP ? 1 : 0), qcy: N },
+    qDimensionInfo: [{ cId: 'd1', qFallbackTitle: 'PointID', qCardinal: N, qStateCounts: { qOption: N } }, ...(CAT ? [{ cId: 'd2', qFallbackTitle: 'Airline', qCardinal: CATS.length, qStateCounts: { qOption: CATS.length } }] : []), ...(SHP ? [{ cId: 'd3', qFallbackTitle: 'AircraftType', qCardinal: SHAPES.length, qStateCounts: { qOption: SHAPES.length } }] : [])],
     qMeasureInfo: [{ cId: 'm1', qFallbackTitle: 'Along-track (m)', qMin: -2200 * SCALE, qMax: 3500 * SCALE, qNumFormat: { qType: 'U' } }, { cId: 'm2', qFallbackTitle: 'Cross-track (m)', qMin: -500 * SCALE, qMax: 500 * SCALE, qNumFormat: { qType: 'U' } }, { cId: 'm3', qFallbackTitle: 'Speed', qMin: 60, qMax: 190 }],
     qDataPages: [],
   },
@@ -66,6 +69,7 @@ const genericObject = {
     for (let r = p.qTop; r < Math.min(N, p.qTop + p.qHeight); r++) {
       const row = [{ ...cell(r, 'P' + r), qElemNumber: r }];
       if (CAT) row.push({ qText: CATS[r % CATS.length], qNum: NaN, qElemNumber: r % CATS.length, qState: 'O' });
+      if (SHP) row.push({ qText: SHAPES[(r >> 3) % SHAPES.length], qNum: NaN, qElemNumber: (r >> 3) % SHAPES.length, qState: 'O' });
       row.push(cell(X[r]), cell(Y[r]), cell(V[r]));
       qMatrix.push(row);
     }

@@ -104,6 +104,7 @@ export function fetchAllRows(
   const sCol = nMeas >= 3 && !legacyColor3 ? nDims + 2 : -1;
   const vCol = legacyColor3 ? nDims + 2 : nMeas >= 4 ? nDims + 3 : -1;
   const cCol = nDims >= 2 ? 1 : -1;
+  const shCol = nDims >= 3 ? 2 : -1;
 
   const cols: QhdsColumns = {
     x: new Float32Array(total),
@@ -118,19 +119,30 @@ export function fetchAllRows(
   if (vCol >= 0 || sCol >= 0) cols.values = {};
   if (vCol >= 0) cols.values!.value = new Float32Array(total);
   if (sCol >= 0) cols.values!.size = new Float32Array(total);
-  const catLabels: string[] = [];
-  const catElems: number[] = [];
-  const catIndex = new Map<string, number>();
-  let catCodes: Uint16Array | null = null;
-  if (cCol >= 0) {
-    catCodes = new Uint16Array(total);
-    cols.categories = { category: { codes: catCodes, labels: catLabels, elems: catElems } };
-  }
+  // Categorical columns: the 2nd dimension ("category", colour) and the 3rd ("shape").
+  const makeCat = () => ({ labels: [] as string[], elems: [] as number[], index: new Map<string, number>(), codes: new Uint16Array(total) });
+  const cat = cCol >= 0 ? makeCat() : null;
+  const shp = shCol >= 0 ? makeCat() : null;
+  if (cat || shp) cols.categories = {};
+  if (cat) cols.categories!.category = { codes: cat.codes, labels: cat.labels, elems: cat.elems };
+  if (shp) cols.categories!.shape = { codes: shp.codes, labels: shp.labels, elems: shp.elems };
+  const catCodes = cat?.codes ?? null;
+  const encode = (k: ReturnType<typeof makeCat>, cell: any): number => {
+    const t = String(cell?.qText ?? "");
+    let i = k.index.get(t);
+    if (i === undefined) {
+      i = k.labels.length;
+      k.index.set(t, i);
+      k.labels.push(t);
+      k.elems.push(Number(cell?.qElemNumber ?? -1));
+    }
+    return i;
+  };
 
   // Rows whose x/y are not numbers are dropped; we compact per page into a
   // staging area, then commit pages strictly in order.
   const staged: Array<
-    | { rows: number; x: Float32Array; y: Float32Array; e: Int32Array; t: string[]; st: Uint8Array; v?: Float32Array; sz?: Float32Array; c?: Uint16Array }
+    | { rows: number; x: Float32Array; y: Float32Array; e: Int32Array; t: string[]; st: Uint8Array; v?: Float32Array; sz?: Float32Array; c?: Uint16Array; sh?: Uint16Array }
     | undefined
   > = new Array(pages);
   let committedPage = 0;
@@ -147,6 +159,7 @@ export function fetchAllRows(
       if (s.v && cols.values) cols.values.value!.set(s.v.subarray(0, s.rows), cols.n);
       if (s.sz && cols.values) cols.values.size!.set(s.sz.subarray(0, s.rows), cols.n);
       if (s.c && catCodes) catCodes.set(s.c.subarray(0, s.rows), cols.n);
+      if (s.sh && shp) shp.codes.set(s.sh.subarray(0, s.rows), cols.n);
       cols.n += s.rows;
       staged[committedPage] = undefined;
       committedPage++;
@@ -172,6 +185,7 @@ export function fetchAllRows(
       const t: string[] = new Array(matrix.length);
       const st = new Uint8Array(matrix.length);
       const c = cCol >= 0 ? new Uint16Array(matrix.length) : undefined;
+      const sh = shCol >= 0 ? new Uint16Array(matrix.length) : undefined;
       let rows = 0;
       for (const row of matrix) {
         const px = num(row[xCol]);
@@ -184,20 +198,11 @@ export function fetchAllRows(
         e[rows] = Number(row[0]?.qElemNumber ?? -1);
         t[rows] = String(row[0]?.qText ?? "");
         st[rows] = row[0]?.qState === "S" ? 1 : 0;
-        if (c) {
-          const t = String(row[cCol]?.qText ?? "");
-          let k = catIndex.get(t);
-          if (k === undefined) {
-            k = catLabels.length;
-            catIndex.set(t, k);
-            catLabels.push(t);
-            catElems.push(Number(row[cCol]?.qElemNumber ?? -1));
-          }
-          c[rows] = k;
-        }
+        if (c && cat) c[rows] = encode(cat, row[cCol]);
+        if (sh && shp) sh[rows] = encode(shp, row[shCol]);
         rows++;
       }
-      staged[p] = { rows, x, y, e, t, st, v, sz, c };
+      staged[p] = { rows, x, y, e, t, st, v, sz, c, sh };
   };
   const worker = async (): Promise<void> => {
     while (!cancelled && next < pages) {
@@ -291,6 +296,9 @@ export interface PackedPlan {
   category: boolean;
   /** The 2nd dimension's field (for element numbers of legend clicks). */
   catField: string | null;
+  /** The 3rd dimension (shape by), carried as another categorical column. */
+  shape: boolean;
+  shapeField: string | null;
   /** Human-readable summary for telemetry. */
   info: string;
   /** One data row per point: x/y never change with selections, only the set of points does. */
@@ -416,11 +424,13 @@ export async function planPacked(app: any, model: any, hc: any, legacyColor3: bo
   if (!def || !app) return null;
   const nDims: number = def.qDimensions?.length ?? 0;
   const nMeas: number = def.qMeasures?.length ?? 0;
-  if (nDims < 1 || nDims > 2 || nMeas < 2) return null;
+  if (nDims < 1 || nDims > 3 || nMeas < 2) return null;
   const idField = await dimField(app, def.qDimensions[0]);
   if (!idField) return null;
-  const catField = nDims === 2 ? await dimField(app, def.qDimensions[1]) : null;
-  if (nDims === 2 && !catField) return null;
+  const catField = nDims >= 2 ? await dimField(app, def.qDimensions[1]) : null;
+  if (nDims >= 2 && !catField) return null;
+  const shapeField = nDims >= 3 ? await dimField(app, def.qDimensions[2]) : null;
+  if (nDims >= 3 && !shapeField) return null;
   const exprs: string[] = [];
   for (let i = 0; i < Math.min(nMeas, 4); i++) {
     const e = await measureExpr(app, def.qMeasures[i]);
@@ -442,8 +452,9 @@ export async function planPacked(app: any, model: any, hc: any, legacyColor3: bo
   if (sIx >= 0) parts.push(`Coalesce(${num(sIx)},'')`);
   if (vIx >= 0) parts.push(`Coalesce(${num(vIx)},'')`);
   if (catField) parts.push(bracket(catField));
+  if (shapeField) parts.push(bracket(shapeField));
   const inner = parts.join(" & Chr(9) & ");
-  const aggrDims = catField ? `${bracket(idField)}, ${bracket(catField)}` : bracket(idField);
+  const aggrDims = [idField, catField, shapeField].filter((f): f is string => Boolean(f)).map(bracket).join(", ");
   const measure = useRows ? `Concat(${inner}, Chr(10))` : `Concat(Aggr(${inner}, ${aggrDims}), Chr(10))`;
   return {
     def: {
@@ -469,7 +480,9 @@ export async function planPacked(app: any, model: any, hc: any, legacyColor3: bo
     value: vIx >= 0,
     category: Boolean(catField),
     catField,
-    info: `${useRows ? "row-level" : "aggr"}${catField ? "+category" : ""}${sIx >= 0 ? "+size" : ""}${vIx >= 0 ? "+colour" : ""}`,
+    shape: Boolean(shapeField),
+    shapeField,
+    info: `${useRows ? "row-level" : "aggr"}${catField ? "+category" : ""}${shapeField ? "+shape" : ""}${sIx >= 0 ? "+size" : ""}${vIx >= 0 ? "+colour" : ""}`,
   };
 }
 
@@ -554,9 +567,14 @@ export function fetchPacked(
   const catIndex = new Map<string, number>();
   let catCodes: Uint16Array | null = null;
   let elemMap: Map<string, number> | null = null;
+  const shpLabels: string[] = [];
+  const shpElems: number[] = [];
+  const shpIndex = new Map<string, number>();
+  let shpCodes: Uint16Array | null = null;
+  if (plan.category || plan.shape) cols.categories = {};
   if (plan.category) {
     catCodes = new Uint16Array(total);
-    cols.categories = { category: { codes: catCodes, labels: catLabels, elems: catElems } };
+    cols.categories!.category = { codes: catCodes, labels: catLabels, elems: catElems };
     // Element numbers for legend clicks arrive on the side; labels seen before are patched.
     void categoryElems(app, plan.catField!)
       .then((m) => {
@@ -564,6 +582,10 @@ export function fetchPacked(
         for (let k = 0; k < catLabels.length; k++) catElems[k] = m.get(catLabels[k]!) ?? -1;
       })
       .catch(() => undefined);
+  }
+  if (plan.shape) {
+    shpCodes = new Uint16Array(total);
+    cols.categories!.shape = { codes: shpCodes, labels: shpLabels, elems: shpElems };
   }
   const perf = { t0: performance.now(), layoutMs: 0, calls: 0, bytes: 0, parseMs: 0, retries: 0 };
 
@@ -574,7 +596,7 @@ export function fetchPacked(
     while (start < len && cols.n < total) {
       let end = text.indexOf(RECORD_SEP, start);
       if (end < 0) end = len;
-      // id ⇥ x ⇥ y [⇥ size] [⇥ value] [⇥ category]
+      // id ⇥ x ⇥ y [⇥ size] [⇥ value] [⇥ category] [⇥ shape]
       const a = text.indexOf(FIELD_SEP, start);
       if (a < 0 || a >= end) {
         start = end + 1;
@@ -618,6 +640,17 @@ export function fetchPacked(
             catElems.push(elemMap?.get(s) ?? -1);
           }
           catCodes[i] = k;
+        }
+        if (shpCodes) {
+          const s = nextField();
+          let k = shpIndex.get(s);
+          if (k === undefined) {
+            k = shpLabels.length;
+            shpIndex.set(s, k);
+            shpLabels.push(s);
+            shpElems.push(-1);
+          }
+          shpCodes[i] = k;
         }
         cols.n++;
       }
@@ -835,11 +868,13 @@ export function subsetFromCache(full: FullCache, ids: string[], hasSelection: bo
   if (sz || vl) out.values = {};
   if (sz) out.values!.size = new Float32Array(k);
   if (vl) out.values!.value = new Float32Array(k);
-  const cat = src.categories?.category;
-  let codes: Uint16Array | null = null;
-  if (cat) {
-    codes = new Uint16Array(k);
-    out.categories = { category: { codes, labels: cat.labels.slice(), elems: cat.elems.slice() } };
+  const cats = Object.entries(src.categories ?? {}).map(([name, c]) => {
+    const codes = new Uint16Array(k);
+    return { name, src: c.codes, codes, labels: c.labels.slice(), elems: c.elems.slice() };
+  });
+  if (cats.length) {
+    out.categories = {};
+    for (const c of cats) out.categories[c.name] = { codes: c.codes, labels: c.labels, elems: c.elems };
   }
   for (let i = 0; i < k; i++) {
     const j = pick[i]!;
@@ -848,7 +883,7 @@ export function subsetFromCache(full: FullCache, ids: string[], hasSelection: bo
     out.labels[i] = src.labels[j]!;
     if (sz) out.values!.size![i] = sz[j]!;
     if (vl) out.values!.value![i] = vl[j]!;
-    if (codes) codes[i] = cat!.codes[j]!;
+    for (const c of cats) c.codes[i] = c.src[j]!;
   }
   return out;
 }

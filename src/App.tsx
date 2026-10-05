@@ -356,8 +356,8 @@ export function App({
     if (cols.categories) {
       // Encoded (codes + labels), never one string per point: the chart reads
       // the codes as they are instead of re-encoding 10⁶ labels per update.
-      const c = cols.categories.category!;
-      out.categories = { category: { codes: c.codes.subarray(0, cols.n), labels: c.labels.slice() } };
+      out.categories = {};
+      for (const [name, c] of Object.entries(cols.categories)) out.categories[name] = { codes: c.codes.subarray(0, cols.n), labels: c.labels.slice() };
     }
     return out;
   }, [version]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -435,9 +435,12 @@ export function App({
   const hasSize = nMeas >= 3 && !legacyColor3(layout);
   // Shapes by the 2nd dimension (Add-ons › Shapes / the editor's Shapes tab).
   const shapesKey = JSON.stringify(props.shapes ?? null);
-  const shapeBy = useMemo(() => toShapeBy(props.shapes, nDims >= 2), [shapesKey, nDims]); // eslint-disable-line react-hooks/exhaustive-deps
-  const catLabels = cols.categories?.category.labels;
-  const catTitle: string = hc?.qDimensionInfo?.[1]?.qFallbackTitle ?? "";
+  // Shapes come from the 3rd dimension when there is one, else from the 2nd
+  // (then colour and shape share a column and the legend's swatches are the glyphs).
+  const shapeKey: "category" | "shape" | null = nDims >= 3 ? "shape" : nDims >= 2 ? "category" : null;
+  const shapeBy = useMemo(() => toShapeBy(props.shapes, shapeKey), [shapesKey, shapeKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  const catLabels = shapeKey ? cols.categories?.[shapeKey]?.labels : undefined;
+  const catTitle: string = (shapeKey === "shape" ? hc?.qDimensionInfo?.[2]?.qFallbackTitle : hc?.qDimensionInfo?.[1]?.qFallbackTitle) ?? "";
   const sizeRange = useMemo<[number, number]>(() => {
     const r = Array.isArray(props.sizeRangeSlider) ? props.sizeRangeSlider : [1.2, 7];
     const lo = Math.max(0.5, Number(r[0]) || 1.2);
@@ -631,7 +634,7 @@ export function App({
   const legendWanted =
     legendMode !== "off" && !small && colorBy.kind !== "density" && colorBy.kind !== "value";
   const legendEntries =
-    colorBy.kind === "category" ? (cols.categories?.category.labels.length ?? 0) : zones.length + 1;
+    colorBy.kind === "category" ? (cols.categories?.category?.labels.length ?? 0) : zones.length + 1;
   const legendSizeKey = `${width}|${height}|${colorBy.kind}|${legendEntries}|${legendWanted}|${props.legendPosition || "auto"}`;
   // Measured once per size/entries: whether the legend fits at all, the room it
   // takes, and whether a side legend had to fall back to the bottom (taller
@@ -662,7 +665,7 @@ export function App({
   // The shape key: a strip under the chart when the legend cannot carry the
   // glyphs (colour is by zone / density / measure, shape by the dimension).
   const shapeKeyOn = Boolean(
-    shapeBy && colorBy.kind !== "category" && !small && catLabels?.length && height - legendH - SHAPE_KEY_H >= MIN_PLOT_H,
+    shapeBy && !(colorBy.kind === "category" && shapeKey === "category") && !small && catLabels?.length && height - legendH - SHAPE_KEY_H >= MIN_PLOT_H,
   );
   const shapeKeyH = shapeKeyOn ? SHAPE_KEY_H : 0;
   // The legend's tail: the no-GPU warning and the statistics box live with the

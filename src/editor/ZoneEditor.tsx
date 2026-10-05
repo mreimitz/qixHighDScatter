@@ -1483,7 +1483,7 @@ export function ZoneEditor({
 
   // ---------- Shapes tab ----------
   const previewShapeBy: DensityShapeBy | undefined =
-    shapesDraft.enabled && catLabels.length ? { kind: "category", key: "category", shapes: shapesDraft.map } : undefined;
+    shapesDraft.enabled && catLabels.length ? { kind: "category", key: shapeBy?.key ?? "category", shapes: shapesDraft.map } : undefined;
   const shapeRows = dealShapes(catLabels, { shapes: shapesDraft.map });
   const setShape = (value: string, shape: DensityPointShape | null) =>
     setShapesDraft((d) => {

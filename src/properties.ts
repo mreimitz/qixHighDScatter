@@ -758,7 +758,7 @@ export const definition = {
             explainSwitch: EXPLAIN,
             shapesEnabled: {
               ref: "props.shapes.enabled",
-              label: "Shape by dimension (2nd dimension)",
+              label: "Shape by dimension",
               type: "boolean",
               component: "switch",
               defaultValue: false,
@@ -767,7 +767,7 @@ export const definition = {
                 { value: false, label: "Off" },
               ],
             },
-            shapesHint: explain("Each value of the 2nd dimension is drawn as its own glyph (circle, square, triangle up/down, diamond, plus, minus, cross, star, hexagon) on top of the colour. Values without an assignment take the next free glyph. A larger point size makes the glyphs easier to tell apart."),
+            shapesHint: explain("Each value of the Shape dimension (the 3rd dimension — or the 2nd when there is no 3rd, so colour and shape then share it) is drawn as its own glyph (circle, square, triangle up/down, diamond, plus, minus, cross, star, hexagon) on top of the colour. Values without an assignment take the next free glyph. A larger point size makes the glyphs easier to tell apart."),
             shapeMapX: explain("Pin a glyph to a value here or in the editor's Shapes tab. The value must match the dimension's text exactly.", (d) => d.props?.shapes?.enabled === true),
             editShapes: {
               component: "button",
@@ -898,8 +898,8 @@ export const dataTargets = [
     path: "/qHyperCubeDef",
     dimensions: {
       min: 1,
-      max: 2,
-      description: (_props: unknown, index: number) => (index === 0 ? "Point identity (one row per point)" : "Category (color by)"),
+      max: 3,
+      description: (_props: unknown, index: number) => ["Point identity (one row per point)", "Category (color by)", "Shape (glyph per value)"][index] ?? "Dimension",
     },
     measures: {
       min: 2,

@@ -74,6 +74,7 @@ All zone settings are in **Add-ons › Zones**. That includes the source (Proper
 | ---------------------- | ------------------------------------- | ------------------ |
 | Dimension 1            | The point identity: one row per point | `PointID`          |
 | Dimension 2 (optional) | A category to colour by               | `Airline`          |
+| Dimension 3 (optional) | A category to shape by (glyphs)       | `AircraftType`     |
 | Measure 1              | X axis                                | `Only(AlongTrack)` |
 | Measure 2              | Y axis                                | `Only(CrossTrack)` |
 | Measure 3 (optional)   | Point size                            | `Sum(Weight)`      |
@@ -103,7 +104,7 @@ Points that match no zone fall into **Outside**. You can rename it, recolour it,
 
 ## Shapes
 
-**Appearance › Shapes › Shape by dimension** turns it on; **Edit shapes…** (or the **Shapes** tab of the zone editor) lists every value of the 2nd dimension with its glyph. Values you don't assign take the next free glyph in the order they appear in the data. Colour stays whatever it is (zone, dimension or measure); when the legend colours by the same dimension its swatches become the glyphs, otherwise a shape key appears under the plot. Glyphs read best from a point size of about 2.
+**Appearance › Shapes › Shape by dimension** turns it on; **Edit shapes…** (or the **Shapes** tab of the zone editor) lists every value of the shape dimension with its glyph. The shape dimension is the 3rd dimension when there is one — so colour (2nd dimension) and shape can be two different fields — otherwise the 2nd dimension serves both. Values you don't assign take the next free glyph in the order they appear in the data. Colour stays whatever it is (zone, dimension or measure); when the legend colours by the same dimension its swatches become the glyphs, otherwise a shape key appears under the plot. Glyphs read best from a point size of about 2.
 
 ## Loading
 
