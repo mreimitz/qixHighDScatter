@@ -5,7 +5,7 @@ Each `## <version>` section becomes the notes of the GitHub release of that vers
 ## 0.7.1 — 2026-10-05
 
 - The shape assignments are edited only in the editor's **Shapes** tab (every value of the shape dimension, live preview); the property panel keeps the on/off switch and the *Edit shapes…* button — a list of hundreds of values has no place in the panel. Fixed *Edit shapes…* failing to open when colour and shape come from different dimensions.
-- **Third dimension: shape by.** A 3rd dimension drives the glyphs, so colour (2nd dimension) and shape can be two different fields; without a 3rd dimension the 2nd keeps serving both, as before. Packed transport, the paged fallback, the selection cache and the editor's Shapes tab all carry the extra column.
+- **Third dimension: shape by.** A 3rd dimension drives the glyphs, so colour (2nd dimension) and shape can be two different fields; without a 3rd dimension the 2nd keeps serving both, as before. The data panel labels the slots *Dimension 1/2/3* (point identity, colour, shape — see the README). Packed transport, the paged fallback, the selection cache and the editor's Shapes tab all carry the extra column.
 
 - **Selections on bare-field measures work.** A measure typed as a plain field (`[XCG]`, `WEIGHT`) cannot be range-selected: the engine answers `RangeSelectHyperCubeValues` with `false`, nebula then clears the selection, and the chart reloaded without any selection applied (range tool, axis ranges and lasso all go through measure ranges). The chart now wraps such measures in `Only(…)` — exact for one row per point — as a session-only soft patch: the saved object is untouched, the axis title stays the field's, and selections work.
 

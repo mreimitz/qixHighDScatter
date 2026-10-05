@@ -866,7 +866,7 @@ export const dataTargets = [
     dimensions: {
       min: 1,
       max: 3,
-      description: (_props: unknown, index: number) => ["Point identity (one row per point)", "Category (color by)", "Shape (glyph per value)"][index] ?? "Dimension",
+      description: (_props: unknown, index: number) => ["Dimension 1", "Dimension 2", "Dimension 3"][index] ?? "Dimension",
     },
     measures: {
       min: 2,
