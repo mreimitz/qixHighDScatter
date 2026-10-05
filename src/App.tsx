@@ -22,7 +22,7 @@ import robotLoaderSvg from "./assets/robot-scatter-loader.svg";
  */
 const ROBOT_FREE = robotLoaderSvg;
 const ROBOT_CONTROLLED = robotLoaderSvg.replace("<svg ", '<svg class="qhds-rl-controlled" ');
-import { appReloadTime, disposePacked, fetchAllRows, fetchPacked, fetchPackedIds, type FetchHandle, type FullCache, type PackedCache, type PackedPlan, planPacked, pointIdIsUnique, type QhdsColumns, subsetFromCache } from "./data";
+import { appReloadTime, disposePacked, ensureAggregatedMeasures, fetchAllRows, fetchPacked, fetchPackedIds, type FetchHandle, type FullCache, type PackedCache, type PackedPlan, planPacked, pointIdIsUnique, type QhdsColumns, subsetFromCache } from "./data";
 import { runProbes } from "./probe";
 import { toDensityZones } from "./zones";
 import { watchZoneTable } from "./data-zones";
@@ -162,6 +162,7 @@ export function App({
   // (3× faster on Qlik Cloud, see data.ts); "paged" is the plain cube paging.
   const transport: "auto" | "paged" = props.transport === "paged" ? "paged" : "auto";
   const packedCache = useRef<PackedCache>({});
+  const aggregatedChecked = useRef(false);
   const idCache = useRef<PackedCache>({});
   // A full load (nothing excluded) is kept: later selections only need the list
   // of possible ids from the engine (a quarter of the bytes, no x/y re-read).
@@ -242,6 +243,17 @@ export function App({
         authoritative ? {} : { concurrency: 2 },
       );
     const start = async () => {
+      // Bare-field measures cannot be range-selected: wrap them (soft patch) first,
+      // then load from the patched cube (the packed plan reads effective properties).
+      if (!aggregatedChecked.current) {
+        aggregatedChecked.current = true;
+        try {
+          await ensureAggregatedMeasures(model);
+        } catch {
+          /* paging still works without it */
+        }
+        if (stopped) return;
+      }
       let plan: PackedPlan | null = null;
       if (transport === "auto" && app && qcy > 0 && qcy <= maxPts) {
         try {

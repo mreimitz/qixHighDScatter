@@ -2,7 +2,9 @@
 
 Each `## <version>` section becomes the notes of the GitHub release of that version (see `.github/workflows/release.yml`). Install: upload `release/qixHighDScatter-v<version>.zip` under *Management Console › Extensions* (replace the existing one to keep every chart).
 
-## 0.7.1 — 2026-10-04
+## 0.7.1 — 2026-10-05
+
+- **Selections on bare-field measures work.** A measure typed as a plain field (`[XCG]`, `WEIGHT`) cannot be range-selected: the engine answers `RangeSelectHyperCubeValues` with `false`, nebula then clears the selection, and the chart reloaded without any selection applied (range tool, axis ranges and lasso all go through measure ranges). The chart now wraps such measures in `Only(…)` — exact for one row per point — as a session-only soft patch: the saved object is untouched, the axis title stays the field's, and selections work.
 
 - The statistics box is out of the plot: it hangs off the legend — below a side legend (under the no-GPU warning when that shows), at the right end of a bottom legend's row, or in a strip under the plot when there is no legend. Statistics are the first thing to go when the object shrinks, the warning sign second, the legend third.
 - The warning sign no longer moves when the object is resized (it is positioned from the legend's measured place, not from corner offsets).

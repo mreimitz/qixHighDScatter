@@ -362,8 +362,56 @@ function singleFieldAgg(expr: string): string | null {
  * `rowLevel`: the point dimension is unique per data row AND every measure is
  * a single-field aggregation, so the engine can skip the Aggr (≈ 2 s at 1M).
  */
+/** The object's properties as the engine evaluates them (soft patches included). */
+export async function effectiveProps(model: any): Promise<any> {
+  try {
+    const eff = await model.getEffectiveProperties?.();
+    if (eff?.qHyperCubeDef) return eff;
+  } catch {
+    /* fall through */
+  }
+  return model.getProperties();
+}
+
+const AGGREGATION =
+  /\b(sum|avg|count|min|max|only|mode|median|fractile|fractileexc|stdev|sterr|skew|kurtosis|var|concat|firstsortedvalue|aggr|maxstring|minstring|firstvalue|lastvalue|correl|linest_\w+|numericcount|textcount|nullcount|missingcount|irr|npv|xirr|xnpv|chi2test_\w+|ttest\w*|ztest\w*)\s*\(/i;
+
+/**
+ * Range selections (ranges, lasso, zones) only work on AGGREGATED measures: the
+ * engine answers `RangeSelectHyperCubeValues` with `false` for a bare field
+ * such as `[XCG]`, and nebula then clears the selection. A bare expression is
+ * wrapped in `Only(…)` — exact for one row per point — as a SOFT patch: this
+ * session only, the saved object is untouched, the title stays the field's.
+ * Returns true when something was patched (the layout changes once).
+ */
+export async function ensureAggregatedMeasures(model: any): Promise<boolean> {
+  const eff = await effectiveProps(model);
+  const measures: any[] = eff?.qHyperCubeDef?.qMeasures ?? [];
+  const patches: Array<{ qOp: string; qPath: string; qValue: string }> = [];
+  measures.forEach((m, i) => {
+    if (m?.qLibraryId) return; // a master measure's expression is not ours to touch
+    const raw = typeof m?.qDef?.qDef === "string" ? m.qDef.qDef : "";
+    const expr = stripEq(raw);
+    if (!expr || AGGREGATION.test(expr)) return;
+    patches.push({ qOp: "replace", qPath: `/qHyperCubeDef/qMeasures/${i}/qDef/qDef`, qValue: JSON.stringify(`Only(${expr})`) });
+    const label = typeof m?.qDef?.qLabel === "string" ? m.qDef.qLabel : "";
+    const labelExpr = typeof m?.qDef?.qLabelExpression === "string" ? m.qDef.qLabelExpression : "";
+    if (!label && !labelExpr)
+      patches.push({ qOp: m?.qDef?.qLabel === undefined ? "add" : "replace", qPath: `/qHyperCubeDef/qMeasures/${i}/qDef/qLabel`, qValue: JSON.stringify(expr.replace(/^\[(.*)\]$/, "$1")) });
+  });
+  if (!patches.length) return false;
+  try {
+    await model.applyPatches(patches, true);
+    return true;
+  } catch (e) {
+    // eslint-disable-next-line no-console
+    console.warn("[qixHighDScatter] could not wrap bare measures in Only() — range selections on them will not work", e);
+    return false;
+  }
+}
+
 export async function planPacked(app: any, model: any, hc: any, legacyColor3: boolean, rowLevel: boolean | null): Promise<PackedPlan | null> {
-  const props = await model.getProperties();
+  const props = await effectiveProps(model);
   const def = props?.qHyperCubeDef;
   if (!def || !app) return null;
   const nDims: number = def.qDimensions?.length ?? 0;
@@ -432,7 +480,7 @@ export function pointIdIsUnique(app: any, model: any): Promise<boolean> {
   let p = uniqueCache.get(key);
   if (!p) {
     p = (async () => {
-      const props = await model.getProperties();
+      const props = await effectiveProps(model);
       const idField = await dimField(app, props?.qHyperCubeDef?.qDimensions?.[0]);
       if (!idField) return false;
       const f = bracket(idField);
