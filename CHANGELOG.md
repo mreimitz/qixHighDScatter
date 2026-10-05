@@ -2,13 +2,20 @@
 
 Each `## <version>` section becomes the notes of the GitHub release of that version (see `.github/workflows/release.yml`). Install: upload `release/qixHighDScatter-v<version>.zip` under *Management Console › Extensions* (replace the existing one to keep every chart).
 
-## 0.7.1 — 2026-10-05
+## 0.8.0 — 2026-10-05
 
-- **Fixed colour per value.** The Shapes tab has a colour dot per value (light grey = not set) that opens a small picker (theme palette, custom colour, “No fixed colour”). A fixed colour overrides every other colouring — zone, dimension or measure — for the points of that value, which get their own legend entry (or recolour their category entry when colour and shape share the dimension); the shape key paints the glyph in it. Stored as `color` on the value's `props.shapes.map` entry, beside or instead of `shape`.
-- The shape assignments are edited only in the editor's **Shapes** tab (every value of the shape dimension, live preview); the property panel keeps the on/off switch and the *Edit shapes…* button — a list of hundreds of values has no place in the panel. Fixed *Edit shapes…* failing to open when colour and shape come from different dimensions.
+### New
+
 - **Third dimension: shape by.** A 3rd dimension drives the glyphs, so colour (2nd dimension) and shape can be two different fields; without a 3rd dimension the 2nd keeps serving both, as before. The data panel labels the slots *Dimension 1/2/3* (point identity, colour, shape — see the README). Packed transport, the paged fallback, the selection cache and the editor's Shapes tab all carry the extra column.
+- **Fixed colour per value.** The Shapes tab has a colour dot per value (light grey = not set) that opens a small picker (theme palette, custom colour, “No fixed colour”). A fixed colour overrides every other colouring — zone, dimension or measure — for the points of that value, which get their own legend entry (or recolour their category entry when colour and shape share the dimension); the shape key paints the glyph in it. Stored as `color` on the value's `props.shapes.map` entry, beside or instead of `shape`.
+- The shape assignments are edited only in the editor's **Shapes** tab (every value of the shape dimension, live preview); the property panel keeps the on/off switch and the *Edit shapes…* button — a list of hundreds of values has no place in the panel.
+
+### Fixed
 
 - **Selections on bare-field measures work.** A measure typed as a plain field (`[XCG]`, `WEIGHT`) cannot be range-selected: the engine answers `RangeSelectHyperCubeValues` with `false`, nebula then clears the selection, and the chart reloaded without any selection applied (range tool, axis ranges and lasso all go through measure ranges). The chart now wraps such measures in `Only(…)` — exact for one row per point — as a session-only soft patch: the saved object is untouched, the axis title stays the field's, and selections work.
+- *Edit shapes…* no longer fails to open when colour and shape come from different dimensions.
+
+## 0.7.1 — 2026-10-04
 
 - The statistics box is out of the plot: it hangs off the legend — below a side legend (under the no-GPU warning when that shows), at the right end of a bottom legend's row, or in a strip under the plot when there is no legend. Statistics are the first thing to go when the object shrinks, the warning sign second, the legend third.
 - The warning sign no longer moves when the object is resized (it is positioned from the legend's measured place, not from corner offsets).

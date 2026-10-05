@@ -2,7 +2,7 @@
   "name": "High Density Scatter",
   "description": "Scatter plot for 100k–1M points: every point drawn, coloured by density, classified by zones on the axes.",
   "type": "visualization",
-  "version": "0.7.1",
+  "version": "0.8.0",
   "author": "Manuel Reimitz",
   "icon": "scatter-chart",
   "preview": "",
