@@ -296,6 +296,8 @@
 .qhds-ze-colordot:disabled { opacity: .4; cursor: default; }
 .qhds-ze-colorpop { position: absolute; left: 0; top: calc(100% + 6px); z-index: 3; width: 236px; padding: 10px; display: flex; flex-direction: column; gap: 8px; align-items: flex-start;
   background: var(--card); border: 1px solid var(--border); border-radius: 6px; box-shadow: 0 8px 24px rgb(0 0 0 / .18); }
+/* The dot sits at the right edge of a scrolling column (Colors tab): open inwards. */
+.qhds-ze-colorpop[data-align="end"] { left: auto; right: 0; }
 .qhds-ze-shapes .qhds-ze-center { padding: 14px 20px 10px 20px; }
 .qhds-ze-link:disabled { opacity: .4; cursor: default; }
 

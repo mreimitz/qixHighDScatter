@@ -12,6 +12,7 @@ import {
   DensityShapeGlyph,
 } from "@elabs-ai/components-charts";
 import { shapeEntries, toShapeBy } from "./shapes";
+import { categoryColors } from "./colors";
 import robotLoaderSvg from "./assets/robot-scatter-loader.svg";
 
 /**
@@ -425,13 +426,27 @@ export function App({
 
   const nMeas = hc?.qMeasureInfo?.length ?? 0;
   const nDims = hc?.qDimensionInfo?.length ?? 0;
+  // Colours pinned to values of the colour dimension: the hash slot of every
+  // value while `persistent` is on, with the colours picked in the editor's
+  // Colors tab over the top (Appearance › Colors and legend). Only `Color by =
+  // Dimension` can honour them — the other modes do not colour by a value.
+  const colorLabels = cols.categories?.category?.labels;
+  const colorLabelsKey = colorLabels?.join("\u0000") ?? "";
+  const colorsKey = JSON.stringify(props.colors ?? null);
+  const pinnedColors = useMemo(
+    () => categoryColors(colorLabels, props.colors, theme.palette.length),
+    [colorLabelsKey, colorsKey, theme.palette.length], // eslint-disable-line react-hooks/exhaustive-deps
+  );
   const colorBy: DensityColorBy = useMemo(() => {
     const want = props.colorBy || "zone";
     if (want === "value" && (nMeas >= 4 || legacyColor3(layout))) return { kind: "value", key: "value" };
-    if (want === "category" && nDims >= 2) return { kind: "category", key: "category" };
+    if (want === "category" && nDims >= 2)
+      return pinnedColors
+        ? { kind: "category", key: "category", colors: pinnedColors }
+        : { kind: "category", key: "category" };
     if (want === "density" || zones.length === 0) return { kind: "density" };
     return { kind: "zone" };
-  }, [props.colorBy, nMeas, nDims, zones.length]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [props.colorBy, nMeas, nDims, zones.length, pinnedColors]); // eslint-disable-line react-hooks/exhaustive-deps
   const hasSize = nMeas >= 3 && !legacyColor3(layout);
   // Shapes by the 2nd dimension (Add-ons › Shapes / the editor's Shapes tab).
   const shapesKey = JSON.stringify(props.shapes ?? null);
@@ -863,12 +878,12 @@ export function App({
 
   // ---------- zone editor ----------
   const [editorOpen, setEditorOpen] = useState(false);
-  const [editorTab, setEditorTab] = useState<"zones" | "shapes">("zones");
+  const [editorTab, setEditorTab] = useState<"zones" | "shapes" | "colors">("zones");
   const qId: string | undefined = layout?.qInfo?.qId;
   useEffect(() => {
     if (!qId) return;
     return registerEditor(qId, (tab) => {
-      setEditorTab(tab === "shapes" ? "shapes" : "zones");
+      setEditorTab(tab === "shapes" || tab === "colors" ? tab : "zones");
       setEditorOpen(true);
     });
   }, [qId]);
@@ -1168,6 +1183,8 @@ export function App({
           initialTab={editorTab}
           catLabels={catLabels ?? []}
           catTitle={catTitle}
+          colorLabels={colorLabels ?? []}
+          colorTitle={hc?.qDimensionInfo?.[1]?.qFallbackTitle ?? ""}
           shapeBy={shapeBy}
           xTitle={xTitle}
           yTitle={yTitle}
