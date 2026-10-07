@@ -187,6 +187,7 @@ export const initialProperties = {
     funMode: true,
     explain: false,
     shapes: { enabled: false, map: [] },
+    colors: { persistent: false, map: [] },
     colorBy: "zone",
     pointRadius: 1.35,
     cellSize: 5,
@@ -798,6 +799,28 @@ export const definition = {
               ],
             },
             colorByX: explain("Zone: each dot takes the colour of the zone it falls in. Dimension: the colour of its 2nd-dimension value. Measure: a light-to-dark ramp over the 4th measure. Density only: one colour, darker where points pile up."),
+            colorPersistent: {
+              ref: "props.colors.persistent",
+              label: "Persistent colors",
+              type: "boolean",
+              component: "switch",
+              defaultValue: false,
+              options: [
+                { value: true, label: "On" },
+                { value: false, label: "Off" },
+              ],
+              show: (d: any) => (d.props?.colorBy || "zone") === "category",
+            },
+            colorPersistentX: explain("Off: a value takes the palette colour of its position in the data, so the colours move when a selection, a sort or a reload changes which values are there. On: each value takes the palette colour its NAME lands on, so it keeps that colour whatever else happens — the same as “persistent colours” in a native Qlik chart, including that two names can land on the same colour.", (d) => (d.props?.colorBy || "zone") === "category"),
+            colorMapX: explain("Pin a colour to a value yourself in the editor's Colors tab — every value listed, with a live preview. A pinned colour wins over the persistent one.", (d) => (d.props?.colorBy || "zone") === "category"),
+            editColors: {
+              component: "button",
+              label: "Edit colors…",
+              action: (data: any) => {
+                openEditor(data?.qInfo?.qId, "colors");
+              },
+              show: (d: any) => (d.props?.colorBy || "zone") === "category",
+            },
             legendShow: {
               ref: "props.legendShow",
               label: "Show legend",

@@ -10,6 +10,7 @@
  * (zone, dimension, measure) for those points; an entry may carry a colour
  * alone (glyph stays automatic) or a glyph alone.
  */
+import { cleanColor } from "./colors";
 import {
   DENSITY_SHAPES,
   dealShapes,
@@ -43,6 +44,8 @@ export const SHAPE_LABEL: Record<DensityPointShape, string> = {
   hexagon: "Hexagon",
 };
 
+export { cleanColor };
+
 export const ALL_SHAPES: readonly DensityPointShape[] = DENSITY_SHAPES;
 
 export function isShape(v: unknown): v is DensityPointShape {
@@ -64,15 +67,6 @@ export function readShapes(raw: unknown): { enabled: boolean; map: ShapeMapEntry
     map.push({ value, ...(hasShape ? { shape } : {}), ...(color ? { color } : {}) });
   }
   return { enabled: p.enabled === true, map };
-}
-
-/** A usable CSS colour string (hex, rgb()/rgba(), hsl(), named), or nothing. */
-export function cleanColor(v: unknown): string | undefined {
-  if (typeof v !== "string") return undefined;
-  const t = v.trim();
-  if (!t) return undefined;
-  if (/^#([0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i.test(t) || /^(rgba?|hsla?)\(/i.test(t) || /^[a-z]+$/i.test(t)) return t;
-  return undefined;
 }
 
 /** Value → fixed colour, for the chart's `shapeBy.colors`. */

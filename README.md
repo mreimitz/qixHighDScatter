@@ -27,6 +27,7 @@ The native Qlik scatter plot switches to a binned view once there are too many p
 - **Native Qlik selections.** Range, lasso and legend-zone selections become real Qlik selections, with the usual ✓ / ✕ selection toolbar.
 - **Deep zoom.** The mouse wheel zooms at the cursor, dragging pans, and a minimap shows where you are.
 - **Reference lines.** Average, median and ±σ lines.
+- **Persistent colours.** Colouring by dimension can pin each value's colour to its name instead of its place in the data, so the colours stop moving when a selection or a reload changes which values are there — and any value can be given a colour by hand in the editor's **Colors** tab.
 - **Shapes by dimension.** Every value of the 2nd dimension can be drawn as its own glyph (circle, square, diamond, triangle up/down, plus, minus, cross, star, hexagon) — on top of the colour. Assign them in the editor's **Shapes** tab.
 - **Loading, your way.** A progress bar along the top edge and/or a "n / total" text while the points stream in, or a loading animation that holds the plot back until every point is in.
 - **Responsive.** The plot itself never disappears: a small object drops the statistics box, the no-GPU warning, the zone tags, the legend, then the axis titles, then the tick labels — in that order. The statistics box and the warning sign hang off the legend (below a side legend, after a bottom legend's row, in a strip under the plot without a legend), never over the plot. Legends never wrap: a bottom legend is one line that scrolls sideways, a side legend scrolls vertically.
@@ -102,6 +103,17 @@ Zones live under **Add-ons › Zones**.
 
 Points that match no zone fall into **Outside**. You can rename it, recolour it, and choose whether it appears in the legend and can be selected.
 
+## Colours
+
+**Appearance › Colors and legend › Color by** picks what the ink means: the **zone** a point falls in, its **dimension** value (the 2nd dimension), a **measure** (the 4th, on a light-to-dark ramp), or **density only**.
+
+Colouring by dimension deals out the twelve palette colours of the app theme. Two settings decide which value gets which:
+
+- **Persistent colors** (off by default). Off, a value takes the colour of its POSITION in the data — so the colours move whenever a selection, a sort or a reload changes which values are present. On, a value takes the colour its NAME lands on and keeps it, whatever else happens. This is what a native Qlik chart calls persistent colours, with the same caveat: twelve colours and more names than that means two values can land on the same colour. The Colors tab says which rows share one.
+- **Edit colors…** opens the **Colors** tab of the editor: every value of the colour dimension, the slot it sits on, and a colour dot (light grey = not pinned) that opens a small picker — theme palette, custom colour, or back to automatic. A pinned colour wins over the automatic one, persistent or not.
+
+A **fixed colour** on the **Shapes** tab is something else again: it is keyed on the shape dimension and overrides every colouring, this one included.
+
 ## Shapes
 
 **Appearance › Shapes › Shape by dimension** turns it on; **Edit shapes…** (or the **Shapes** tab of the zone editor) lists every value of the shape dimension with its glyph. The shape dimension is the 3rd dimension when there is one — so colour (2nd dimension) and shape can be two different fields — otherwise the 2nd dimension serves both. Values you don't assign take the next free glyph in the order they appear in the data. Colour stays whatever it is (zone, dimension or measure) unless you hard-set one: the colour dot on a value's row (light grey = not set) opens a small picker — theme palette, custom colour, or back to none — and a fixed colour overrides every other colouring for the points of that value (it gets its own legend entry; when the legend colours by the same dimension, that entry simply takes the colour). When the legend colours by the same dimension its swatches become the glyphs, otherwise a shape key appears under the plot. Glyphs read best from a point size of about 2.
@@ -154,12 +166,14 @@ npm run package      # → release/qixHighDScatter-v<version>.zip
 node test/run-harness.mjs "?n=300000"   # real nebula.js runtime + EnigmaMocker in Chromium
 node test/selection-test.mjs            # drives range / lasso / legend, records engine calls
 node test/editor-test.mjs               # zone editor
+node test/color-persistent-test.mjs     # persistent + pinned colours
+node test/unit/run.mjs colors           # the colour rules, in node
 node test/wheel-longtask.mjs            # wheel-zoom frame times
 ```
 
 Setting `BRAND_UI_SRC=<elabs-components>/packages` builds against the brand-ui source instead of the published packages.
 
-**Until brand-ui ships `DensityScatterChart.shapeBy` on npm (it lives on the `feat/density-scatter-shape-by` branch of `mreimitz/elabs-components`), build against that source:**
+**Until brand-ui ships `DensityScatterChart.shapeBy` and `colorBy.colors` on npm (they live on the `feat/density-scatter-shape-by` branch of `mreimitz/elabs-components`), build against that source:**
 
 ```bash
 git clone -b feat/density-scatter-shape-by https://github.com/mreimitz/elabs-components ../elabs-components

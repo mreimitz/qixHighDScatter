@@ -25,6 +25,7 @@ import {
   type DensityView,
 } from "@elabs-ai/components-charts";
 import { ALL_SHAPES, SHAPE_LABEL, readShapes, type ShapeMapEntry } from "../shapes";
+import { readColors, stableSlot, type ColorMapEntry } from "../colors";
 import { quadrantId, toDensityZones } from "../zones";
 import type { QhdsTheme } from "../theme";
 import { localeMarks, makeAxisFormatter, parseQlikColor } from "../format";
@@ -59,11 +60,14 @@ export interface ZoneEditorProps {
   yTitle?: string;
   totalPoints: number;
   onClose: () => void;
-  /** Which view opens first: the zones or the Shapes tab. */
-  initialTab?: "zones" | "shapes";
-  /** The 2nd dimension's distinct values (first-seen order) and title — the Shapes tab's rows. */
+  /** Which view opens first: the zones, the Shapes or the Colors tab. */
+  initialTab?: "zones" | "shapes" | "colors";
+  /** The shape column's distinct values (first-seen order) and title — the Shapes tab's rows. */
   catLabels?: readonly string[];
   catTitle?: string;
+  /** The colour column's distinct values (first-seen order) and title — the Colors tab's rows. */
+  colorLabels?: readonly string[];
+  colorTitle?: string;
   /** What the live chart currently draws with, so the preview starts identical. */
   shapeBy?: DensityShapeBy;
 }
@@ -138,17 +142,23 @@ function CoverIcon({ outside }: { outside: boolean }) {
  * colour”. One popover is open at a time (the parent owns `open`).
  */
 function ColorDot({
+  align = "start",
   color,
   disabled,
   label,
+  noun = "Fixed colour",
   onChange,
   onOpenChange,
   open,
   palette,
 }: {
+  /** Which edge the popover hangs off — "end" when the dot is flush right. */
+  align?: "start" | "end";
   color?: string;
   disabled?: boolean;
   label: string;
+  /** What the dot sets, for the labels: a fixed colour (Shapes) or a colour (Colors). */
+  noun?: string;
   onChange: (color: string | null) => void;
   onOpenChange: (open: boolean) => void;
   open: boolean;
@@ -179,18 +189,18 @@ function ColorDot({
       <button
         aria-expanded={open}
         aria-haspopup="dialog"
-        aria-label={color ? `Fixed colour for ${label}: ${color}` : `Fixed colour for ${label}: not set`}
+        aria-label={color ? `${noun} for ${label}: ${color}` : `${noun} for ${label}: not set`}
         className="qhds-ze-colordot qhds-ze-tip"
         data-set={color ? "true" : "false"}
         data-testid={`ze-color-${label}`}
-        data-tip={color ? `Fixed colour ${color}` : "Fixed colour (not set)"}
+        data-tip={color ? `${noun} ${color}` : `${noun} (not set)`}
         disabled={disabled}
         onClick={() => onOpenChange(!open)}
         style={color ? { background: color } : undefined}
         type="button"
       />
       {open ? (
-        <div aria-label={`Fixed colour for ${label}`} className="qhds-ze-colorpop" role="dialog">
+        <div aria-label={`${noun} for ${label}`} className="qhds-ze-colorpop" data-align={align} role="dialog">
           <div className="qhds-ze-swatches">
             {palette.slice(0, 10).map((c, i) => (
               <button
@@ -223,7 +233,7 @@ function ColorDot({
             }}
             type="button"
           >
-            No fixed colour
+            No {noun.toLowerCase()}
           </button>
         </div>
       ) : null}
@@ -414,11 +424,14 @@ export function ZoneEditor({
   initialTab = "zones",
   catLabels = [],
   catTitle = "",
+  colorLabels = [],
+  colorTitle = "",
   shapeBy,
 }: ZoneEditorProps) {
   const [loaded, setLoaded] = useState(false);
-  // "zones" shows the Properties / Data model views (by `source`); "shapes" the Shapes tab.
-  const [tab, setTab] = useState<"zones" | "shapes">(initialTab);
+  // "zones" shows the Properties / Data model views (by `source`); "shapes" the
+  // Shapes tab; "colors" the Colors tab.
+  const [tab, setTab] = useState<"zones" | "shapes" | "colors">(initialTab);
   // Draft of props.shapes: on/off + the explicit value → glyph assignments +
   // the fixed colours (hard-set ink per value, overriding every other colouring).
   const [shapesDraft, setShapesDraft] = useState<{
@@ -431,6 +444,14 @@ export function ZoneEditor({
   const shapesInitial = useRef<string>("");
   const shapesJson = JSON.stringify(shapesDraft);
   const shapesDirty = loaded && shapesJson !== shapesInitial.current;
+  // Draft of props.colors: persistent colours on/off + the colours pinned to
+  // values of the COLOUR column (the 2nd dimension).
+  const [colorsDraft, setColorsDraft] = useState<{
+    persistent: boolean;
+    map: Record<string, string>;
+  }>({ persistent: false, map: {} });
+  const colorsInitial = useRef<string>("");
+  const colorsDirty = loaded && JSON.stringify(colorsDraft) !== colorsInitial.current;
   const [drafts, setDrafts] = useState<DraftZone[]>([]);
   const [past, setPast] = useState<DraftZone[][]>([]);
   const [future, setFuture] = useState<DraftZone[][]>([]);
@@ -503,6 +524,13 @@ export function ZoneEditor({
         };
         shapesInitial.current = JSON.stringify(draft);
         setShapesDraft(draft);
+        const co = readColors(props?.props?.colors ?? layout?.props?.colors);
+        const colorDraft = {
+          persistent: co.persistent,
+          map: Object.fromEntries(co.map.map((e) => [e.value, e.color])),
+        };
+        colorsInitial.current = JSON.stringify(colorDraft);
+        setColorsDraft(colorDraft);
       } catch (e) {
         setError(String((e as any)?.message ?? e));
       } finally {
@@ -839,6 +867,7 @@ export function ZoneEditor({
   const dirty =
     past.length > 0 ||
     shapesDirty ||
+    colorsDirty ||
     source !== (layout?.props?.zoneSource === "data" ? "data" : "props");
   const apply = async () => {
     setSaving(true);
@@ -867,6 +896,14 @@ export function ZoneEditor({
           qOp: "replace",
           qPath: "/props/shapes",
           qValue: JSON.stringify({ enabled: shapesDraft.enabled, map }),
+        });
+      }
+      if (colorsDirty) {
+        const map: ColorMapEntry[] = Object.entries(colorsDraft.map).map(([value, color]) => ({ value, color }));
+        patches.push({
+          qOp: "replace",
+          qPath: "/props/colors",
+          qValue: JSON.stringify({ persistent: colorsDraft.persistent, map }),
         });
       }
       await model.applyPatches(patches, false);
@@ -1767,6 +1804,161 @@ export function ZoneEditor({
     </div>
   );
 
+  // ---------- Colors tab ----------
+  // The palette slots that have a `--chart-N` token (theme.ts fills twelve).
+  const colorSlots = Math.max(1, Math.min(theme.palette.length, 12));
+  // What a value is painted with when nothing is pinned to it: the slot its
+  // NAME hashes to while persistent colours are on, else the slot of its
+  // position in the data — the same rule the chart applies.
+  const autoColorOf = (label: string, k: number) =>
+    theme.palette[colorsDraft.persistent ? stableSlot(label, colorSlots) : k % colorSlots]!;
+  const effColorOf = (label: string, k: number) => colorsDraft.map[label] ?? autoColorOf(label, k);
+  const previewColors = Object.fromEntries(colorLabels.map((label, k) => [label, effColorOf(label, k)]));
+  // Two names can hash to the same slot (as in a native Qlik chart). Say so on
+  // the rows that share an ink, so the fix — pinning one of them — is obvious.
+  const colorSharers = new Map<string, string[]>();
+  for (const [label, color] of Object.entries(previewColors)) {
+    const at = colorSharers.get(color) ?? [];
+    at.push(label);
+    colorSharers.set(color, at);
+  }
+  const setPinned = (value: string, color: string | null) =>
+    setColorsDraft((d) => {
+      const map = { ...d.map };
+      if (color) map[value] = color;
+      else delete map[value];
+      return { ...d, map };
+    });
+  const colorsView = (
+    <div className="qhds-ze-shapes" data-testid="ze-colors" key="colors">
+      <section className="qhds-ze-shapes-list">
+        <label className="qhds-ze-switch">
+          <input
+            checked={colorsDraft.persistent}
+            data-testid="ze-colors-persistent"
+            onChange={(e) => setColorsDraft((d) => ({ ...d, persistent: e.target.checked }))}
+            type="checkbox"
+          />
+          <span>
+            <strong>Persistent colours</strong>
+            <span className="qhds-ze-muted">
+              Each value takes the palette colour its name lands on, so it keeps that colour when a
+              selection, a sort or a reload changes which values are there. Off: the colour follows the
+              value's position in the data.
+            </span>
+          </span>
+        </label>
+        {!colorLabels.length ? (
+          <div className="qhds-ze-note">
+            Add a 2nd dimension (<strong>Dimension 2</strong>) in the Data section and set
+            <strong> Color by</strong> to <strong>Dimension</strong> to colour points by its values.
+          </div>
+        ) : (
+          <>
+            <div className="qhds-ze-shapes-head">
+              <span className="qhds-ze-h">
+                {colorLabels.length} {colorLabels.length === 1 ? "value" : "values"}
+                {colorTitle ? ` of ${colorTitle}` : ""}
+              </span>
+              <button
+                className="qhds-ze-link"
+                disabled={!Object.keys(colorsDraft.map).length}
+                onClick={() => setColorsDraft((d) => ({ ...d, map: {} }))}
+                type="button"
+              >
+                Reset all to automatic
+              </button>
+            </div>
+            <ul aria-label="Colour per value" className="qhds-ze-shaperows">
+              {colorLabels.map((label, k) => {
+                const pinned = colorsDraft.map[label];
+                const shared = (colorSharers.get(effColorOf(label, k)) ?? []).filter((v) => v !== label);
+                return (
+                  <li className="qhds-ze-shaperow" data-testid={`ze-colorrow-${label}`} key={label}>
+                    <span className="qhds-ze-shape-cur">
+                      <DensityShapeGlyph color={effColorOf(label, k)} shape="circle" size={14} />
+                    </span>
+                    <span className="qhds-ze-item-text">
+                      <span className="qhds-ze-item-name">{label}</span>
+                      <span className="qhds-ze-item-sub">
+                        {pinned
+                          ? `pinned · ${pinned}`
+                          : colorsDraft.persistent
+                            ? `automatic · persistent slot ${stableSlot(label, colorSlots) + 1}`
+                            : `automatic · slot ${(k % colorSlots) + 1}`}
+                        {shared.length ? ` · same colour as ${shared.join(", ")}` : ""}
+                      </span>
+                    </span>
+                    <ColorDot
+                      align="end"
+                      color={pinned}
+                      label={label}
+                      noun="Colour"
+                      onChange={(c) => setPinned(label, c)}
+                      onOpenChange={(open) => setColorPickFor(open ? `color:${label}` : null)}
+                      open={colorPickFor === `color:${label}`}
+                      palette={theme.palette}
+                    />
+                  </li>
+                );
+              })}
+            </ul>
+            <p className="qhds-ze-muted">
+              The colour dot pins a colour to a value — it wins over the automatic one, persistent or
+              not; grey means not pinned. These colours apply to <strong>Color by = Dimension</strong>.
+              A fixed colour on the Shapes tab is a harder override: it beats every colouring, this one
+              included.
+            </p>
+          </>
+        )}
+      </section>
+      <section aria-label="Colour preview" className="qhds-ze-center">
+        <div className="qhds-ze-preview" ref={previewRef}>
+          {loaded ? (
+            <DensityScatterChart
+              accessibleLabel="Colour preview"
+              colorBy={
+                colorLabels.length
+                  ? { kind: "category", key: "category", colors: previewColors }
+                  : zones.length
+                    ? { kind: "zone" }
+                    : { kind: "density" }
+              }
+              data={data}
+              domain={domain}
+              formatX={fmtX}
+              formatY={fmtY}
+              legend={colorLabels.length ? { position: "bottom", layout: "row" } : false}
+              onViewChange={setView}
+              plotHeight={previewH}
+              pointRadius={Number(layout?.props?.pointRadius) || 1.35}
+              selectionToolbar="none"
+              view={view}
+              xLabel={xTitle}
+              yLabel={yTitle}
+              zoneTags={false}
+              zoom
+            />
+          ) : (
+            <div className="qhds-ze-muted">Loading…</div>
+          )}
+        </div>
+        <div className="qhds-ze-hints">
+          <span>Preview: wheel zooms · drag pans</span>
+          <span className="qhds-ze-hints-tools">
+            <button
+              className="qhds-ze-btn"
+              onClick={() => setView(home ? { ...home } : undefined)}
+              type="button"
+            >
+              Fit
+            </button>
+          </span>
+        </div>
+      </section>
+    </div>
+  );
+
   const body = (
     <div
       className="qhds qhds-ze-root"
@@ -1803,7 +1995,7 @@ export function ZoneEditor({
       >
         <header className="qhds-ze-header">
           <div className="qhds-ze-titles">
-            <h2 id="qhds-ze-title">{tab === "shapes" ? "Shapes" : "Zones"}</h2>
+            <h2 id="qhds-ze-title">{tab === "shapes" ? "Shapes" : tab === "colors" ? "Colors" : "Zones"}</h2>
             <span className="qhds-ze-muted">
               {xTitle ?? "X"} × {yTitle ?? "Y"} · {totalPoints.toLocaleString()}{" "}
               points
@@ -1846,6 +2038,15 @@ export function ZoneEditor({
             >
               Shapes
             </button>
+            <button
+              aria-checked={tab === "colors"}
+              data-testid="ze-tab-colors"
+              onClick={() => setTab("colors")}
+              role="radio"
+              type="button"
+            >
+              Colors
+            </button>
           </div>
           <span className="qhds-ze-sep" />
           <button
@@ -1878,6 +2079,8 @@ export function ZoneEditor({
 
         {tab === "shapes" ? (
           shapesView
+        ) : tab === "colors" ? (
+          colorsView
         ) : source === "data" ? (
           dataView
         ) : (

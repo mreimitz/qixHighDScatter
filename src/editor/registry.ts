@@ -3,7 +3,7 @@
  * receives the object's properties) and the chart instance that opens the
  * modal. Keyed by the object's qId; each mounted chart registers itself.
  */
-export type EditorTab = "zones" | "shapes";
+export type EditorTab = "zones" | "shapes" | "colors";
 const openers = new Map<string, (tab?: EditorTab) => void>();
 
 export function registerEditor(qId: string, open: (tab?: EditorTab) => void): () => void {

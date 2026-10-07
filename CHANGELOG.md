@@ -2,6 +2,18 @@
 
 Each `## <version>` section becomes the notes of the GitHub release of that version (see `.github/workflows/release.yml`). Install: upload `release/qixHighDScatter-v<version>.zip` under *Management Console › Extensions* (replace the existing one to keep every chart).
 
+## 0.9.1 — 2026-10-06
+
+### New
+
+- **Persistent colours.** *Appearance › Colors and legend › Persistent colors* (only for *Color by = Dimension*). Off — and that is still the default — a value takes the palette colour of its POSITION in the data, so every colour moves as soon as a selection, a sort or a reload changes which values are there. On, a value takes the palette colour its NAME lands on and keeps it, in this chart and across reloads. Same idea, and the same caveat, as persistent colours in a native Qlik chart: with twelve palette colours two names can land on the same one, and the editor says which rows share an ink so you can pin one of them.
+- **A colour pinned to a value.** *Edit colors…* opens the editor's new **Colors** tab: every value of the colour dimension with the slot it sits on, a live preview, and a colour dot (light grey = not pinned) with the theme palette, a custom colour and “No colour”. A pinned colour wins over the automatic one, persistent or not. Stored as `props.colors = { persistent, map: [{ value, color }] }`.
+  - This is the colour dimension's own list — not the fixed colour on the **Shapes** tab, which is keyed on the SHAPE dimension and still overrides every colouring, this one included.
+
+### Requires
+
+- brand-ui `DensityScatterChart` with `colorBy.colors` (the `feat/density-scatter-shape-by` branch of `mreimitz/elabs-components`) — see README › Develop.
+
 ## 0.8.0 — 2026-10-05
 
 ### New
