@@ -76,10 +76,10 @@ All zone settings are in **Add-ons › Zones**. That includes the source (Proper
 | Dimension 1            | The point identity: one row per point | `PointID`          |
 | Dimension 2 (optional) | A category to colour by               | `Airline`          |
 | Dimension 3 (optional) | A category to shape by (glyphs)       | `AircraftType`     |
-| Measure 1              | X axis                                | `Only(AlongTrack)` |
-| Measure 2              | Y axis                                | `Only(CrossTrack)` |
-| Measure 3 (optional)   | Point size                            | `Sum(Weight)`      |
-| Measure 4 (optional)   | A value to colour by                  | `Avg(Speed)`       |
+| Measure 1              | X axis                                | `max(AlongTrack)` |
+| Measure 2              | Y axis                                | `max(CrossTrack)` |
+| Measure 3 (optional)   | Point size                            | `sum(Weight)`      |
+| Measure 4 (optional)   | A value to colour by                  | `avg(Speed)`       |
 
 By default the chart fetches up to 1,000,000 points. You can raise this to 2,000,000 in **Data handling › Max points fetched**.
 
