@@ -7,7 +7,10 @@
 export interface QhdsTheme {
   vars: Record<string, string>;
   dark: boolean;
+  /** The theme's "12 colors" palette (the `--chart-N` tokens). */
   palette: string[];
+  /** The theme's "100 colors" palette — generated from `palette` when the theme has none. */
+  palette100: string[];
   fontFamily: string;
   resolveColor: (c: any, fallbackIndex: number) => string;
 }
@@ -39,6 +42,42 @@ function luminance(color: string): number | null {
   return 0.2126 * c[0]! + 0.7152 * c[1]! + 0.0722 * c[2]!;
 }
 
+/**
+ * `n` colours from a short palette, for a theme without a 100-colour one: the
+ * palette itself, then its hues again, lighter and darker by turns.
+ */
+export function extendPalette(base: readonly string[], n: number): string[] {
+  const rgb = base
+    .map((c) => /^#?([0-9a-f]{6})$/i.exec(c.trim()))
+    .filter((m): m is RegExpExecArray => !!m)
+    .map((m) => parseInt(m[1]!, 16))
+    .map((v) => [(v >> 16) & 255, (v >> 8) & 255, v & 255]);
+  if (!rgb.length) return [...base];
+  const out: string[] = [];
+  const hex = (c: number[]) => "#" + c.map((u) => Math.round(u).toString(16).padStart(2, "0")).join("");
+  for (let round = 0; out.length < n; round++) {
+    // round 0: as is; then toward white and toward black by turns, a bit further each pair.
+    const step = Math.ceil(round / 2);
+    const t = 1 - 0.7 ** step;
+    const to = round % 2 ? 255 : 0;
+    for (const c of rgb) {
+      if (out.length >= n) break;
+      out.push(round === 0 ? hex(c) : hex(c.map((u) => u + (to - u) * t)));
+    }
+  }
+  return out;
+}
+
+let latest: { palette: string[]; palette100: string[] } = {
+  palette: DEFAULT_PALETTE,
+  palette100: extendPalette(DEFAULT_PALETTE, 100),
+};
+
+/** The palettes of the theme a chart last rendered with — for the property panel's Color scheme list. */
+export function latestPalettes(): { palette: string[]; palette100: string[] } {
+  return latest;
+}
+
 export function mapTheme(theme: any): QhdsTheme {
   const style = (base: string, path: string, attr: string) => safe<string>(() => theme?.getStyle?.(base, path, attr), "");
 
@@ -48,9 +87,21 @@ export function mapTheme(theme: any): QhdsTheme {
     const colors = Array.isArray(p?.colors?.[0]) ? p.colors[p.colors.length - 1] : p?.colors;
     return (colors || []).filter((c: unknown) => typeof c === "string" && HEX.test(c));
   };
-  let palette = fromPalette(palettes.find((p) => p?.type === "row") ?? palettes[0]);
+  // Qlik themes ship two data palettes, keyed like a native chart's
+  // `color.dimensionScheme`: "12" (12 colors, a pyramid) and "100" (100 colors,
+  // a row). Themes that do not key them: the big one is the 100.
+  const keyOf = (p: any) => String(p?.key ?? p?.propertyValue ?? p?.name ?? "");
+  const big = (p: any) => fromPalette(p).length >= 50;
+  const p100 = palettes.find((p) => /^100\b/.test(keyOf(p))) ?? palettes.find(big);
+  const p12 =
+    palettes.find((p) => /^12\b/.test(keyOf(p))) ??
+    palettes.find((p) => p !== p100 && p?.type === "row") ??
+    palettes.find((p) => p !== p100);
+  let palette = fromPalette(p12 ?? palettes[0]);
   if (palette.length < 3) palette = fromPalette(pickerPalettes[0]);
   if (palette.length < 3) palette = DEFAULT_PALETTE;
+  let palette100 = p100 ? fromPalette(p100) : [];
+  if (palette100.length < 50) palette100 = extendPalette(palette, 100);
 
   const background = style("object", "", "backgroundColor");
   const text = style("object", "", "color") || "#404040";
@@ -112,5 +163,6 @@ export function mapTheme(theme: any): QhdsTheme {
     return palette[fallbackIndex % palette.length]!;
   };
 
-  return { vars, dark, palette, fontFamily, resolveColor };
+  latest = { palette, palette100 };
+  return { vars, dark, palette, palette100, fontFamily, resolveColor };
 }

@@ -276,7 +276,7 @@
 .qhds-shapekey::-webkit-scrollbar-thumb { background: color-mix(in oklab, var(--foreground) 25%, transparent); border-radius: 3px; }
 
 /* ---------- zone editor: Shapes tab ---------- */
-.qhds-ze-shapes { flex-grow: 1; min-height: 0; display: grid; grid-template-columns: minmax(420px, 46%) minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); }
+.qhds-ze-shapes { flex-grow: 1; min-height: 0; display: grid; grid-template-columns: minmax(540px, 50%) minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); }
 .qhds-ze-shapes-list { display: flex; flex-direction: column; gap: 12px; padding: 18px 20px 12px 24px; border-right: 1px solid var(--border); overflow: auto; min-height: 0; }
 .qhds-ze-switch { display: flex; align-items: flex-start; gap: 10px; font-size: 13px; cursor: pointer; }
 .qhds-ze-switch > input { margin-top: 3px; }
@@ -285,7 +285,11 @@
 .qhds-ze-shaperows { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
 .qhds-ze-shaperow { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--border); }
 .qhds-ze-shape-cur { width: 26px; height: 26px; display: inline-flex; align-items: center; justify-content: center; border: 1px solid var(--border); border-radius: 3px; color: var(--foreground); flex: 0 0 auto; }
-.qhds-ze-shaperow .qhds-ze-item-text { flex: 1 1 auto; min-width: 90px; }
+/* Long values: the name gives way (ellipsis, full name on hover), never the shape picker —
+   it stays one row of ten, aligned from row to row. */
+.qhds-ze-shaperow .qhds-ze-item-text { flex: 1 1 0; min-width: 0; }
+.qhds-ze-shaperow > .qhds-ze-shapepick { flex: 0 0 auto; flex-wrap: nowrap; }
+.qhds-ze-shaperow .qhds-ze-item-sub { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .qhds-ze-shapepick > button { width: 28px; height: 28px; color: var(--foreground); }
 .qhds-ze-shapepick > button[aria-checked="true"] { color: var(--card); }
 .qhds-ze-shapepick > button:disabled { opacity: .4; cursor: default; }
@@ -298,6 +302,10 @@
   background: var(--card); border: 1px solid var(--border); border-radius: 6px; box-shadow: 0 8px 24px rgb(0 0 0 / .18); }
 /* The dot sits at the right edge of a scrolling column (Colors tab): open inwards. */
 .qhds-ze-colorpop[data-align="end"] { left: auto; right: 0; }
+.qhds-ze-scheme { display: flex; flex-direction: column; gap: 6px; }
+.qhds-ze-scheme .qhds-ze-seg > button { display: flex; flex-direction: column; align-items: stretch; gap: 5px; padding: 7px 10px; }
+.qhds-ze-schemestrip { display: flex; height: 10px; border-radius: 2px; overflow: hidden; }
+.qhds-ze-schemestrip > span { flex: 1 1 0; min-width: 0; }
 .qhds-ze-shapes .qhds-ze-center { padding: 14px 20px 10px 20px; }
 .qhds-ze-link:disabled { opacity: .4; cursor: default; }
 

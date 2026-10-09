@@ -12,7 +12,7 @@ import {
   DensityShapeGlyph,
 } from "@elabs-ai/components-charts";
 import { shapeEntries, toShapeBy } from "./shapes";
-import { categoryColors } from "./colors";
+import { categoryColors, schemeClasses } from "./colors";
 import robotLoaderSvg from "./assets/robot-scatter-loader.svg";
 
 /**
@@ -434,19 +434,21 @@ export function App({
   const colorLabelsKey = colorLabels?.join("\u0000") ?? "";
   const colorsKey = JSON.stringify(props.colors ?? null);
   const pinnedColors = useMemo(
-    () => categoryColors(colorLabels, props.colors, theme.palette.length),
-    [colorLabelsKey, colorsKey, theme.palette.length], // eslint-disable-line react-hooks/exhaustive-deps
+    () => categoryColors(colorLabels, props.colors, theme),
+    [colorLabelsKey, colorsKey, theme.palette, theme.palette100], // eslint-disable-line react-hooks/exhaustive-deps
   );
+  // Color scheme 12 / 100 colors: how many values get a class of their own.
+  const maxClasses = schemeClasses(props.colors);
   const colorBy: DensityColorBy = useMemo(() => {
     const want = props.colorBy || "zone";
     if (want === "value" && (nMeas >= 4 || legacyColor3(layout))) return { kind: "value", key: "value" };
     if (want === "category" && nDims >= 2)
       return pinnedColors
-        ? { kind: "category", key: "category", colors: pinnedColors }
-        : { kind: "category", key: "category" };
+        ? { kind: "category", key: "category", colors: pinnedColors, maxClasses }
+        : { kind: "category", key: "category", maxClasses };
     if (want === "density" || zones.length === 0) return { kind: "density" };
     return { kind: "zone" };
-  }, [props.colorBy, nMeas, nDims, zones.length, pinnedColors]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [props.colorBy, nMeas, nDims, zones.length, pinnedColors, maxClasses]); // eslint-disable-line react-hooks/exhaustive-deps
   const hasSize = nMeas >= 3 && !legacyColor3(layout);
   // Shapes by the 2nd dimension (Add-ons › Shapes / the editor's Shapes tab).
   const shapesKey = JSON.stringify(props.shapes ?? null);
