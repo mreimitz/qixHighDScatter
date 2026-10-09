@@ -109,6 +109,7 @@ Points that match no zone fall into **Outside**. You can rename it, recolour it,
 
 Colouring by dimension deals out the twelve palette colours of the app theme. Two settings decide which value gets which:
 
+- **Color scheme**: **12 colors** (default) or **100 colors** — the theme's two data palettes, as in a native Qlik chart. With 12, twelve values get a colour of their own and the rest share “Other”; with 100, up to a hundred values do. Persistent and pinned colours work with both.
 - **Persistent colors** (off by default). Off, a value takes the colour of its POSITION in the data — so the colours move whenever a selection, a sort or a reload changes which values are present. On, a value takes the colour its NAME lands on and keeps it, whatever else happens. This is what a native Qlik chart calls persistent colours, with the same caveat: twelve colours and more names than that means two values can land on the same colour. The Colors tab says which rows share one.
 - **Edit colors…** opens the **Colors** tab of the editor: every value of the colour dimension, the slot it sits on, and a colour dot (light grey = not pinned) that opens a small picker — theme palette, custom colour, or back to automatic. A pinned colour wins over the automatic one, persistent or not.
 
@@ -167,16 +168,17 @@ node test/run-harness.mjs "?n=300000"   # real nebula.js runtime + EnigmaMocker 
 node test/selection-test.mjs            # drives range / lasso / legend, records engine calls
 node test/editor-test.mjs               # zone editor
 node test/color-persistent-test.mjs     # persistent + pinned colours
+node test/color-scheme-test.mjs         # 12 / 100 colors
 node test/unit/run.mjs colors           # the colour rules, in node
 node test/wheel-longtask.mjs            # wheel-zoom frame times
 ```
 
 Setting `BRAND_UI_SRC=<elabs-components>/packages` builds against the brand-ui source instead of the published packages.
 
-**Until brand-ui ships `DensityScatterChart.shapeBy` and `colorBy.colors` on npm (they live on the `feat/density-scatter-shape-by` branch of `mreimitz/elabs-components`), build against that source:**
+**Until brand-ui ships `DensityScatterChart.colorBy.maxClasses` on npm (the 100-colour scheme; it lives on the `feat/density-scatter-100-colors` branch of `xavierlepitre/elabs-components`), build against that source:**
 
 ```bash
-git clone -b feat/density-scatter-shape-by https://github.com/mreimitz/elabs-components ../elabs-components
+git clone -b feat/density-scatter-100-colors https://github.com/xavierlepitre/elabs-components ../elabs-components
 (cd ../elabs-components && pnpm install)
 BRAND_UI_SRC=../elabs-components/packages npm run build
 ```

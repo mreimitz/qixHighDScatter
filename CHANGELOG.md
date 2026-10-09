@@ -2,6 +2,20 @@
 
 Each `## <version>` section becomes the notes of the GitHub release of that version (see `.github/workflows/release.yml`). Install: upload `release/qixHighDScatter-v<version>.zip` under *Management Console › Extensions* (replace the existing one to keep every chart).
 
+## 0.10.0 — 2026-10-09
+
+### New
+
+- **Color scheme: 12 colors or 100 colors.** *Appearance › Colors and legend › Color scheme* (for *Color by = Dimension*), the same choice as in a native Qlik chart, listing the theme's two data palettes. 12 colors (the default, as before): twelve values get a colour of their own, the rest share “Other”. 100 colors: up to a hundred values each get one from the theme's 100-colour palette (a theme without one gets 100 colours derived from its 12). Persistent colours and pinned colours work with both. Also on the editor's **Colors** tab, with each palette drawn as a strip and a live preview. Stored as `props.colors.scheme` (`"12"` | `"100"`).
+
+### Fixed
+
+- **Shapes tab with long values.** A long name no longer pushes the shape picker onto a second line: the name gives way (ellipsis, full name on hover) and the ten shapes stay one aligned row. Same on the Colors tab.
+
+### Requires
+
+- brand-ui `DensityScatterChart` with `colorBy.maxClasses` (the `feat/density-scatter-100-colors` branch of `xavierlepitre/elabs-components`) — see README › Develop.
+
 ## 0.9.1 — 2026-10-06
 
 ### New

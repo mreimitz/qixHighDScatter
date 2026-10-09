@@ -27,7 +27,11 @@ const CAT = params.get('cat') === '1';
 // `&shape=1` (with cat=1): a 3rd dimension (AircraftType, 4 values) — shape by a different dimension than colour.
 const SHP = CAT && params.get('shape') === '1';
 const SHAPES = ['A320', 'A321', 'A350', 'B38M'];
-const CATS = ['Aurora Air', 'Blue Heron', 'Coastline', 'Meridian', 'Northwind', 'Zephyr'];
+// `&cats=40` (with cat=1): that many airlines instead of six — the 100-colour scheme.
+// `&catname=…`: their name stem (long names: the editor's row layout).
+const CATS = params.get('cats')
+  ? Array.from({ length: Number(params.get('cats')) }, (_, i) => `${params.get('catname') || 'Airline'} ${String(i + 1).padStart(3, '0')}`)
+  : ['Aurora Air', 'Blue Heron', 'Coastline', 'Meridian', 'Northwind', 'Zephyr'];
 const cell = (n, t) => ({ qNum: n, qText: t ?? String(n), qElemNumber: 0, qState: 'L' });
 const zones = JSON.parse(params.get('zones') || 'null') || [
   { label: 'Core', show: true, kind: 'envelope', mirror: true, extendStart: !!params.get('endless'), extendEnd: !!params.get('endless'), upper: [{ x: -2200, y: 42 }, { x: -650, y: 42 }, { x: -200, y: 15 }, { x: 3500, y: 15 }], color: { index: -1, color: '#4477aa' } },

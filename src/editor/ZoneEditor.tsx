@@ -25,7 +25,7 @@ import {
   type DensityView,
 } from "@elabs-ai/components-charts";
 import { ALL_SHAPES, SHAPE_LABEL, readShapes, type ShapeMapEntry } from "../shapes";
-import { readColors, stableSlot, type ColorMapEntry } from "../colors";
+import { autoColor, readColors, type ColorMapEntry, type ColorScheme } from "../colors";
 import { quadrantId, toDensityZones } from "../zones";
 import type { QhdsTheme } from "../theme";
 import { localeMarks, makeAxisFormatter, parseQlikColor } from "../format";
@@ -134,6 +134,16 @@ function CoverIcon({ outside }: { outside: boolean }) {
         strokeWidth={1.6}
       />
     </svg>
+  );
+}
+/** A palette as one strip of colour, the way Qlik's Color scheme list draws it. */
+function SchemeSwatch({ colors }: { colors: readonly string[] }) {
+  return (
+    <span aria-hidden="true" className="qhds-ze-schemestrip">
+      {colors.map((c, i) => (
+        <span key={i} style={{ background: c }} />
+      ))}
+    </span>
   );
 }
 /**
@@ -447,9 +457,10 @@ export function ZoneEditor({
   // Draft of props.colors: persistent colours on/off + the colours pinned to
   // values of the COLOUR column (the 2nd dimension).
   const [colorsDraft, setColorsDraft] = useState<{
+    scheme: ColorScheme;
     persistent: boolean;
     map: Record<string, string>;
-  }>({ persistent: false, map: {} });
+  }>({ scheme: "12", persistent: false, map: {} });
   const colorsInitial = useRef<string>("");
   const colorsDirty = loaded && JSON.stringify(colorsDraft) !== colorsInitial.current;
   const [drafts, setDrafts] = useState<DraftZone[]>([]);
@@ -526,6 +537,7 @@ export function ZoneEditor({
         setShapesDraft(draft);
         const co = readColors(props?.props?.colors ?? layout?.props?.colors);
         const colorDraft = {
+          scheme: co.scheme,
           persistent: co.persistent,
           map: Object.fromEntries(co.map.map((e) => [e.value, e.color])),
         };
@@ -903,7 +915,7 @@ export function ZoneEditor({
         patches.push({
           qOp: "replace",
           qPath: "/props/colors",
-          qValue: JSON.stringify({ persistent: colorsDraft.persistent, map }),
+          qValue: JSON.stringify({ scheme: colorsDraft.scheme, persistent: colorsDraft.persistent, map }),
         });
       }
       await model.applyPatches(patches, false);
@@ -1696,7 +1708,9 @@ export function ZoneEditor({
                       <DensityShapeGlyph color={row.color} shape={row.shape} size={14} />
                     </span>
                     <span className="qhds-ze-item-text">
-                      <span className="qhds-ze-item-name">{row.label}</span>
+                      <span className="qhds-ze-item-name" title={row.label}>
+                        {row.label}
+                      </span>
                       <span className="qhds-ze-item-sub">
                         {SHAPE_LABEL[row.shape]}
                         {explicit ? "" : " · automatic"}
@@ -1805,13 +1819,13 @@ export function ZoneEditor({
   );
 
   // ---------- Colors tab ----------
-  // The palette slots that have a `--chart-N` token (theme.ts fills twelve).
-  const colorSlots = Math.max(1, Math.min(theme.palette.length, 12));
   // What a value is painted with when nothing is pinned to it: the slot its
   // NAME hashes to while persistent colours are on, else the slot of its
-  // position in the data — the same rule the chart applies.
-  const autoColorOf = (label: string, k: number) =>
-    theme.palette[colorsDraft.persistent ? stableSlot(label, colorSlots) : k % colorSlots]!;
+  // position in the data, in the 12- or 100-colour palette — the same rule the chart applies.
+  const autoOf = (label: string, k: number) =>
+    autoColor(label, k, colorsDraft.scheme, colorsDraft.persistent, theme);
+  const autoColorOf = (label: string, k: number) => autoOf(label, k).color;
+  const colorClasses = colorsDraft.scheme === "100" ? 100 : 12;
   const effColorOf = (label: string, k: number) => colorsDraft.map[label] ?? autoColorOf(label, k);
   const previewColors = Object.fromEntries(colorLabels.map((label, k) => [label, effColorOf(label, k)]));
   // Two names can hash to the same slot (as in a native Qlik chart). Say so on
@@ -1832,6 +1846,28 @@ export function ZoneEditor({
   const colorsView = (
     <div className="qhds-ze-shapes" data-testid="ze-colors" key="colors">
       <section className="qhds-ze-shapes-list">
+        <div className="qhds-ze-scheme">
+          <span className="qhds-ze-h">Color scheme</span>
+          <div aria-label="Color scheme" className="qhds-ze-seg qhds-ze-seg-2" role="radiogroup">
+            {(["12", "100"] as const).map((sc) => (
+              <button
+                aria-checked={colorsDraft.scheme === sc}
+                data-testid={`ze-colors-scheme-${sc}`}
+                key={sc}
+                onClick={() => setColorsDraft((d) => ({ ...d, scheme: sc }))}
+                role="radio"
+                type="button"
+              >
+                <span>{sc} colors</span>
+                <SchemeSwatch colors={sc === "100" ? theme.palette100 : theme.palette.slice(0, 12)} />
+              </button>
+            ))}
+          </div>
+          <span className="qhds-ze-muted">
+            As in a native Qlik chart: the theme's 12- or 100-colour palette. Twelve or a hundred values
+            get a colour of their own; the rest share “Other”.
+          </span>
+        </div>
         <label className="qhds-ze-switch">
           <input
             checked={colorsDraft.persistent}
@@ -1879,13 +1915,15 @@ export function ZoneEditor({
                       <DensityShapeGlyph color={effColorOf(label, k)} shape="circle" size={14} />
                     </span>
                     <span className="qhds-ze-item-text">
-                      <span className="qhds-ze-item-name">{label}</span>
+                      <span className="qhds-ze-item-name" title={label}>
+                        {label}
+                      </span>
                       <span className="qhds-ze-item-sub">
                         {pinned
                           ? `pinned · ${pinned}`
-                          : colorsDraft.persistent
-                            ? `automatic · persistent slot ${stableSlot(label, colorSlots) + 1}`
-                            : `automatic · slot ${(k % colorSlots) + 1}`}
+                          : k >= colorClasses
+                            ? "Other · past the scheme's colours"
+                            : `automatic · ${colorsDraft.persistent ? "persistent slot" : "slot"} ${autoOf(label, k).slot + 1}`}
                         {shared.length ? ` · same colour as ${shared.join(", ")}` : ""}
                       </span>
                     </span>
@@ -1919,7 +1957,7 @@ export function ZoneEditor({
               accessibleLabel="Colour preview"
               colorBy={
                 colorLabels.length
-                  ? { kind: "category", key: "category", colors: previewColors }
+                  ? { kind: "category", key: "category", colors: previewColors, maxClasses: colorClasses }
                   : zones.length
                     ? { kind: "zone" }
                     : { kind: "density" }

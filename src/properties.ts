@@ -1,4 +1,5 @@
 import { openEditor } from "./editor/registry";
+import { latestPalettes } from "./theme";
 
 /**
  * qixHighDScatter — initial properties + property-panel definition.
@@ -187,7 +188,7 @@ export const initialProperties = {
     funMode: true,
     explain: false,
     shapes: { enabled: false, map: [] },
-    colors: { persistent: false, map: [] },
+    colors: { scheme: "12", persistent: false, map: [] },
     colorBy: "zone",
     pointRadius: 1.35,
     cellSize: 5,
@@ -799,6 +800,26 @@ export const definition = {
               ],
             },
             colorByX: explain("Zone: each dot takes the colour of the zone it falls in. Dimension: the colour of its 2nd-dimension value. Measure: a light-to-dark ramp over the 4th measure. Density only: one colour, darker where points pile up."),
+            colorScheme: {
+              ref: "props.colors.scheme",
+              label: "Color scheme",
+              type: "string",
+              component: "dropdown",
+              defaultValue: "12",
+              // Same list as a native chart's Color scheme: the theme's two data
+              // palettes. `component: "color-scheme"` + `colors` draw each option
+              // as its palette strip where the client supports it; elsewhere the
+              // label alone shows.
+              options: () => {
+                const { palette, palette100 } = latestPalettes();
+                return [
+                  { value: "12", label: "12 colors", component: "color-scheme", type: "row", colors: palette.slice(0, 12) },
+                  { value: "100", label: "100 colors", component: "color-scheme", type: "row", colors: palette100 },
+                ];
+              },
+              show: (d: any) => (d.props?.colorBy || "zone") === "category",
+            },
+            colorSchemeX: explain("12 colors: the theme's 12-colour palette — twelve values get a colour of their own, the rest share “Other”. 100 colors: the theme's 100-colour palette — up to a hundred values each get a colour of their own, the rest share “Other”. Same choice as Color scheme in a native Qlik chart.", (d) => (d.props?.colorBy || "zone") === "category"),
             colorPersistent: {
               ref: "props.colors.persistent",
               label: "Persistent colors",

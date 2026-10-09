@@ -3,7 +3,11 @@
  * to the chart's `colorBy.colors`.
  *
  * Stored (property panel friendly, patchable):
- *   props.colors = { persistent: boolean, map: [{ value: "Aurora Air", color: "#c00" }, …] }
+ *   props.colors = { scheme: "12" | "100", persistent: boolean, map: [{ value: "Aurora Air", color: "#c00" }, …] }
+ *
+ * `scheme` is the palette, as in a native Qlik chart's *Color scheme*: the
+ * theme's "12 colors" (default) or "100 colors". With 12, values past the
+ * twelfth repeat the palette; with 100, a hundred values get an ink of their own.
  *
  * Two independent things, both of which pin a class to an ink instead of the
  * slot its first-seen position in the data would give it:
@@ -26,7 +30,10 @@ export interface ColorMapEntry {
   color: string;
 }
 
+export type ColorScheme = "12" | "100";
+
 export interface ColorsProps {
+  scheme?: ColorScheme;
   persistent?: boolean;
   map?: ColorMapEntry[];
 }
@@ -41,7 +48,7 @@ export function cleanColor(v: unknown): string | undefined {
 }
 
 /** The property, cleaned: usable colours only, one entry per value. */
-export function readColors(raw: unknown): { persistent: boolean; map: ColorMapEntry[] } {
+export function readColors(raw: unknown): { scheme: ColorScheme; persistent: boolean; map: ColorMapEntry[] } {
   const p = (raw && typeof raw === "object" ? raw : {}) as ColorsProps;
   const seen = new Set<string>();
   const map: ColorMapEntry[] = [];
@@ -52,7 +59,7 @@ export function readColors(raw: unknown): { persistent: boolean; map: ColorMapEn
     seen.add(value);
     map.push({ value, color });
   }
-  return { persistent: p.persistent === true, map };
+  return { scheme: p.scheme === "100" ? "100" : "12", persistent: p.persistent === true, map };
 }
 
 /**
@@ -71,22 +78,54 @@ export function stableSlot(value: string, slots: number): number {
 }
 
 /**
- * `colorBy.colors` for the chart: the hash slot of every value when
- * `persistent` is on, with the user's pinned colours over the top. Slots go out
- * as `var(--chart-N)` (the tokens `theme.ts` fills from the app palette), so a
- * theme flip re-colours without a re-render. `undefined` when nothing is pinned.
+ * The ink a value of the colour dimension gets when nothing is pinned to it:
+ * the slot its NAME hashes to while `persistent` is on, else the slot of its
+ * position `k` in the data. Scheme 12 answers `var(--chart-N)` (the tokens
+ * `theme.ts` fills from the app palette, so a theme flip re-colours without a
+ * re-render); scheme 100 answers the colour itself.
+ */
+export function autoColor(
+  label: string,
+  k: number,
+  scheme: ColorScheme,
+  persistent: boolean,
+  palettes: { palette: readonly string[]; palette100: readonly string[] },
+): { slot: number; color: string; token?: string } {
+  if (scheme === "100" && palettes.palette100.length) {
+    const n = palettes.palette100.length;
+    const slot = persistent ? stableSlot(label, n) : k % n;
+    return { slot, color: palettes.palette100[slot]! };
+  }
+  // Only the first 12 palette entries have a `--chart-N` token (theme.ts).
+  const n = Math.max(1, Math.min(palettes.palette.length || 0, 12));
+  const slot = persistent ? stableSlot(label, n) : k % n;
+  return { slot, color: palettes.palette[slot] ?? "#4477aa", token: `var(--chart-${slot + 1})` };
+}
+
+/** Most values a scheme colours on their own (the rest share "Other"). */
+export function schemeClasses(raw: unknown): number {
+  return readColors(raw).scheme === "100" ? 100 : 12;
+}
+
+/**
+ * `colorBy.colors` for the chart: the automatic ink of every value when
+ * `persistent` is on or the scheme is 100 (the chart only knows the twelve
+ * series tokens), with the user's pinned colours over the top. `undefined`
+ * when nothing needs saying.
  */
 export function categoryColors(
   labels: readonly string[] | undefined,
   raw: unknown,
-  paletteSize: number,
+  palettes: { palette: readonly string[]; palette100: readonly string[] },
 ): Record<string, string> | undefined {
-  const { persistent, map } = readColors(raw);
-  if (!persistent && !map.length) return undefined;
+  const { scheme, persistent, map } = readColors(raw);
+  if (!persistent && scheme === "12" && !map.length) return undefined;
   const colors: Record<string, string> = {};
-  // Only the first 12 palette entries have a `--chart-N` token (theme.ts).
-  const slots = Math.max(1, Math.min(paletteSize || 0, 12));
-  if (persistent) for (const label of labels ?? []) colors[label] = `var(--chart-${stableSlot(label, slots) + 1})`;
+  if (persistent || scheme === "100")
+    (labels ?? []).forEach((label, k) => {
+      const a = autoColor(label, k, scheme, persistent, palettes);
+      colors[label] = a.token ?? a.color;
+    });
   for (const e of map) colors[e.value] = e.color;
   return Object.keys(colors).length ? colors : undefined;
 }
